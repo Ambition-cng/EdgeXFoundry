@@ -1,0 +1,59 @@
+apiVersion : "v2"
+name: "Socket-Device-Profile"
+manufacturer: "cccccf"
+model: "Socket-1"
+description: "Socket device profile"
+labels:
+  - "socket"
+
+deviceResources:
+  -
+    name: "Image"
+    isHidden: true
+    description: "student image."
+    properties:
+      valueType: "String"
+      readWrite: "RW"
+      mediaType: "image/jpeg"
+  -
+    name: "EEG"
+    isHidden: true
+    description: "student eeg."
+    properties:
+      valueType: "String"
+      readWrite: "RW"
+  -
+    name: "InteractiveLogFile"
+    isHidden: true
+    description: "student interactive log file."
+    properties:
+      valueType: "String"
+      readWrite: "RW"
+
+deviceCommands:
+  -
+    name: "ImageCommand"
+    isHidden: true
+    readWrite: "RW"
+    resourceOperations:
+      - deviceResource: "Image"
+  -
+    name: "EEGCommand"
+    isHidden: true
+    readWrite: "RW"
+    resourceOperations:
+      - deviceResource: "EEG"
+  -
+    name: "InteractiveLogFileCommand"
+    isHidden: true
+    readWrite: "RW"
+    resourceOperations:
+      - deviceResource: "InteractiveLogFile"
+  -
+    name: "TestCommand"
+    isHidden: true
+    readWrite: "RW"
+    resourceOperations:
+      - deviceResource: "Image"
+      - deviceResource: "EEG"
+      - deviceResource: "InteractiveLogFile"

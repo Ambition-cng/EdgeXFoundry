@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+option go_package = "github.com/edgexfoundry/app-cccccf/protobuf";
+
+package protobuf;
+
+// 定义服务接口
+service GRpcService {
+    rpc modelProcess (ModelProcessRequest) returns (ModelProcessResponse) {}  //一个服务中可以定义多个接口，也就是多个函数功能
+}
+
+// 请求的参数
+message ModelProcessRequest {
+    string imageData = 1;
+    string eegData = 2;
+};
+
+// 返回的对象
+message ModelProcessResponse {
+    string result = 1;
+};

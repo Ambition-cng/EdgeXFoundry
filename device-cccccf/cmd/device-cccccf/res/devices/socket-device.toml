@@ -1,0 +1,12 @@
+[[DeviceList]]
+  Name = "default-socket-device"
+  ProfileName = "Socket-Device-Profile"
+  Description = "Socket device get student learning behavior"
+  Labels = [ "socket" ]
+  [DeviceList.Protocols]
+  [DeviceList.Protocols.socket]
+    Host = "192.168.40.2"
+  [[DeviceList.AutoEvents]]
+    Interval = "20ms"
+    OnChange = false
+    SourceName = "ImageCommand"
