@@ -5,8 +5,8 @@
   Labels = [ "socket" ]
   [DeviceList.Protocols]
   [DeviceList.Protocols.socket]
-    Host = "192.168.40.2"
+    Host = "192.168.31.70"
   [[DeviceList.AutoEvents]]
     Interval = "20ms"
     OnChange = false
-    SourceName = "ImageCommand"
+    SourceName = "EEGAndFacial"
