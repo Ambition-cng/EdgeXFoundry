@@ -35,7 +35,7 @@ LogLevel = "INFO"
 
 [Service]
 HealthCheckInterval = "10s"
-Host = "192.168.40.131"
+Host = "192.168.31.70"
 # TODO: set this port appropriately,
 #       App service use port assigments 597xx with lower range 00-39 reserved for
 #       app-service-configurable profiles/instances, Rules Engine and examples
@@ -166,14 +166,14 @@ DeviceNames = "default-socket-device"
 # This can be any structure you need, but it can not contain slices. Use a maps instead of slices.
 # For more details see: https://docs.edgexfoundry.org/2.2/microservices/application/GeneralAppServiceConfig/#custom-configuration
 [APPService]
-ResourceNames = "Image"
+ResourceNames = "EEGAndFacial"
 [APPService.RPCServerInfo]
   Host = "192.168.31.70"
   Port = 50052
-  Timeout = 100
+  Timeout = 10
   Protocol = "grpc"
 [APPService.CloudServerInfo]
   Host = "0.0.0.0"
   Port = 1025
-  Timeout = 100
+  Timeout = 10
   Protocol = "socket"

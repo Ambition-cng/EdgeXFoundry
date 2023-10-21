@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"reflect"
 	"strings"
 
 	"github.com/edgexfoundry/device-cccccf/config"
@@ -27,19 +26,15 @@ type DeviceInfo struct {
 }
 
 type SocketDriver struct {
-	lc                         logger.LoggingClient
-	asyncCh                    chan<- *sdkModels.AsyncValues
-	deviceCh                   chan<- []sdkModels.DiscoveredDevice
-	result                     map[string]interface{}
-	deviceInfo                 map[string]DeviceInfo
-	readCommandsExecuted       gometrics.Counter
-	serviceConfig              *config.ServiceConfig
-	Image                      string
-	EEG                        string
-	InteractiveLogFile         string
-	imageListener              net.Listener
-	eegListener                net.Listener
-	interactiveLogFileListener net.Listener
+	lc                   logger.LoggingClient
+	asyncCh              chan<- *sdkModels.AsyncValues
+	deviceCh             chan<- []sdkModels.DiscoveredDevice
+	result               map[string]interface{}
+	deviceInfo           map[string]DeviceInfo
+	readCommandsExecuted gometrics.Counter
+	serviceConfig        *config.ServiceConfig
+	EEGAndFacial         string
+	eegandfaciallistener net.Listener
 }
 
 func (s *SocketDriver) Initialize(lc logger.LoggingClient, asyncCh chan<- *sdkModels.AsyncValues, deviceCh chan<- []sdkModels.DiscoveredDevice) error {
@@ -62,12 +57,6 @@ func (s *SocketDriver) Initialize(lc logger.LoggingClient, asyncCh chan<- *sdkMo
 		return fmt.Errorf("'SocketInfo' configuration validation failed: %s", err.Error())
 	}
 
-	if err := ds.ListenForCustomConfigChanges(
-		&s.serviceConfig.SocketInfo.Writable,
-		"SocketInfo/Writable", s.ProcessCustomConfigChanges); err != nil {
-		return fmt.Errorf("unable to listen for changes for 'SocketInfo/Writable' custom configuration: %s", err.Error())
-	}
-
 	s.readCommandsExecuted = gometrics.NewCounter()
 
 	var err error
@@ -88,55 +77,18 @@ func (s *SocketDriver) Initialize(lc logger.LoggingClient, asyncCh chan<- *sdkMo
 	switch socketInfo.SocketType {
 	case "tcp":
 		{
-			s.imageListener, err = net.Listen("tcp", ":"+socketInfo.ImagePort)
+			s.eegandfaciallistener, err = net.Listen("tcp", ":"+socketInfo.EEGAndFacialPort)
 			if err != nil {
-				s.lc.Errorf("Error listening on ImagePort:", err)
+				s.lc.Errorf("Error listening on EEGAndFacialPort:", err)
 			}
-			go s.ListeningToClients(s.imageListener)
-			s.lc.Infof("Listening on ImagePort: %s", socketInfo.ImagePort)
-
-			s.eegListener, err = net.Listen("tcp", ":"+socketInfo.EEGPort)
-			if err != nil {
-				s.lc.Errorf("Error listening on EEGPort:", err)
-			}
-			go s.ListeningToClients(s.eegListener)
-			s.lc.Infof("Listening on EEGPort: %s", socketInfo.EEGPort)
-
-			s.interactiveLogFileListener, err = net.Listen("tcp", ":"+socketInfo.InteractiveLogFilePort)
-			if err != nil {
-				s.lc.Errorf("Error listening on InteractiveLogFilePort:", err)
-			}
-			go s.ListeningToClients(s.interactiveLogFileListener)
-			s.lc.Infof("Listening on InteractiveLogFilePort: %s", socketInfo.InteractiveLogFilePort)
+			go s.ListeningToClients(s.eegandfaciallistener)
+			s.lc.Infof("Listening on EEGAndFacialPort: %s", socketInfo.EEGAndFacialPort)
 		}
 	default:
 		s.lc.Info("SocketType is not TCP")
 	}
 
 	return nil
-}
-
-// ProcessCustomConfigChanges ...
-func (s *SocketDriver) ProcessCustomConfigChanges(rawWritableConfig interface{}) {
-	updated, ok := rawWritableConfig.(*config.WritableInfo)
-	if !ok {
-		s.lc.Error("unable to process custom config updates: Can not cast raw config to type 'SocketWritable'")
-		return
-	}
-
-	s.lc.Info("Received configuration updates for 'SocketInfo.Writable' section")
-
-	previous := s.serviceConfig.SocketInfo.Writable
-	s.serviceConfig.SocketInfo.Writable = *updated
-
-	if reflect.DeepEqual(previous, *updated) {
-		s.lc.Info("No changes detected")
-		return
-	}
-
-	if previous.Timeout != updated.Timeout {
-		s.lc.Infof("DiscoverSleepDurationSecs changed to: %d", updated.Timeout)
-	}
 }
 
 // deviceName: 发送get命令时的物理设备的名称
@@ -146,7 +98,7 @@ func (s *SocketDriver) ProcessCustomConfigChanges(rawWritableConfig interface{})
 func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[string]models.ProtocolProperties, reqs []sdkModels.CommandRequest) (res []*sdkModels.CommandValue, err error) {
 	res = make([]*sdkModels.CommandValue, len(reqs))
 
-	if reqs[0].DeviceResourceName == "Image" {
+	if reqs[0].DeviceResourceName == "EEGAndFacial" {
 		if s.deviceInfo[deviceName].conn == nil {
 			s.lc.Debugf("connection between device: %s and device-service has not been established yet", deviceName)
 			return nil, nil
@@ -188,9 +140,7 @@ func (s *SocketDriver) Stop(force bool) error {
 	for _, v := range s.deviceInfo {
 		v.conn.Close()
 	}
-	s.imageListener.Close()
-	s.eegListener.Close()
-	s.interactiveLogFileListener.Close()
+	s.eegandfaciallistener.Close()
 	return nil
 }
 

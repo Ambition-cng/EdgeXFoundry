@@ -11,18 +11,10 @@ type ServiceConfig struct {
 // SimpleCustomConfig is example of service's custom structured configuration that is specified in the service's
 // configuration.toml file and Configuration Provider (aka Consul), if enabled.
 type SocketInfo struct {
-	Host                   string
-	EEGPort                string
-	ImagePort              string
-	InteractiveLogFilePort string
-	BufferSize             int64
-	SocketType             string
-	Writable               WritableInfo
-}
-
-// SimpleWritable defines the service's custom configuration writable section, i.e. can be updated from Consul
-type WritableInfo struct {
-	Timeout int64
+	Host             string
+	EEGAndFacialPort string
+	BufferSize       int64
+	SocketType       string
 }
 
 // UpdateFromRaw updates the service's full configuration from raw data received from
@@ -43,10 +35,6 @@ func (sw *ServiceConfig) UpdateFromRaw(rawConfig interface{}) bool {
 func (info *SocketInfo) Validate() error {
 	if info.BufferSize == 0 {
 		return errors.New("socket.BufferSize configuration setting can not be blank")
-	}
-
-	if info.Writable.Timeout < 10 {
-		return errors.New("socket.Writable.Timeout configuration setting must be 10 or greater")
 	}
 
 	return nil

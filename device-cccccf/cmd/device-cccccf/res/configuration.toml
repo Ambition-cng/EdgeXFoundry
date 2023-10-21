@@ -1,7 +1,7 @@
 MaxEventSize = 0 # value 0 unlimit the maximum event size that can be sent to message bus or core-data.
 
 [Writable]
-LogLevel = "DEBUG"
+LogLevel = "INFO"
   # Example InsecureSecrets configuration that simulates SecretStore for when EDGEX_SECURITY_SECRET_STORE=false
   # InsecureSecrets are required for when Redis is used for message bus
   [Writable.InsecureSecrets]
@@ -15,7 +15,7 @@ LogLevel = "DEBUG"
 
 [Service]
 HealthCheckInterval = "10s"
-Host = "192.168.40.131"
+Host = "192.168.31.70"
 Port = 59999 # Device serivce are assigned the 599xx range
 ServerBindAddr = ""  # blank value defaults to Service.Host value
 StartupMsg = "device cccccf started"
@@ -110,10 +110,6 @@ TokenFile = "/tmp/edgex/secrets/device-cccccf/secrets-token.json"
 
 [SocketInfo]
 Host = "localhost"
-EEGPort = "10023"
-ImagePort = "10024"
-InteractiveLogFilePort = "10025"
+EEGAndFacialPort = "10024"
 BufferSize = 1024
 SocketType = "tcp"
-  [SocketInfo.Writable]
-  Timeout = 10

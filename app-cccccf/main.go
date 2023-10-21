@@ -99,19 +99,6 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 
 	pipelinefunction := functions.Newpipelinefunction(app.serviceConfig.APPService.RPCServerInfo, app.serviceConfig.APPService.CloudServerInfo)
 
-	// TODO: Replace below functions with built in and/or your custom functions for your use case
-	//       or remove if using Pipeline By Topics below.
-	//       See https://docs.edgexfoundry.org/2.2/microservices/application/BuiltIn/ for list of built-in functions
-	// err = app.service.SetDefaultFunctionsPipeline(
-	// 	transforms.NewFilterFor(deviceNames).FilterByDeviceName,
-	// 	pipelinefunction.LogEventDetails,
-	// 	pipelinefunction.FacialAndEEGModels,
-	// 	pipelinefunction.SendEventToCloud)
-	// if err != nil {
-	// 	app.lc.Errorf("SetFunctionsPipeline returned error: %s", err.Error())
-	// 	return -1
-	// }
-
 	// TODO: Remove adding functions pipelines by topic if default pipeline above is all your Use Case needs.
 	//       Or remove default above if your use case needs multiple pipelines by topic.
 	// Example of adding functions pipelines by topic.
@@ -123,7 +110,7 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 	// Note: This example with default above causes Events from Int32 source to be processed twice
 	//       resulting in the XML to be published back to the MessageBus twice.
 	// See https://docs.edgexfoundry.org/2.2/microservices/application/AdvancedTopics/#pipeline-per-topics for more details.
-	err = app.service.AddFunctionsPipelineForTopics("Images", []string{"edgex/events/#/#/#/Image"},
+	err = app.service.AddFunctionsPipelineForTopics("EEGAndFacials", []string{"edgex/events/#/#/#/EEGAndFacial"},
 		pipelinefunction.LogEventDetails,
 		pipelinefunction.FacialAndEEGModels,
 		pipelinefunction.SendEventToCloud)

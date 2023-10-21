@@ -39,7 +39,6 @@ type pipelinefunction struct {
 	resourcename    string
 	rpcServerInfo   config.RemoteServerInfo
 	cloudServerInfo config.RemoteServerInfo
-	jsonData        []uint8
 }
 
 func (pf *pipelinefunction) LogEventDetails(ctx interfaces.AppFunctionContext, data interface{}) (bool, interface{}) {
@@ -64,7 +63,7 @@ func (pf *pipelinefunction) LogEventDetails(ctx interfaces.AppFunctionContext, d
 	for index, reading := range event.Readings {
 		switch strings.ToLower(reading.ValueType) {
 		case strings.ToLower(common.ValueTypeBinary):
-			lc.Infof(
+			lc.Debugf(
 				"Reading #%d received in pipeline '%s' with ID=%s, Resource=%s, ValueType=%s, MediaType=%s and BinaryValue of size=`%d`",
 				index+1,
 				ctx.PipelineId(),
@@ -74,7 +73,7 @@ func (pf *pipelinefunction) LogEventDetails(ctx interfaces.AppFunctionContext, d
 				reading.MediaType,
 				len(reading.Value))
 		case strings.ToLower(common.ValueTypeObject):
-			lc.Infof(
+			lc.Debugf(
 				"Reading #%d received in pipeline '%s' with ID=%s, Resource=%s, ValueType=%s, MediaType=%s and ObjectValue accept",
 				index+1,
 				ctx.PipelineId(),
@@ -84,7 +83,7 @@ func (pf *pipelinefunction) LogEventDetails(ctx interfaces.AppFunctionContext, d
 				reading.MediaType)
 
 		default:
-			lc.Infof("Reading #%d received in pipeline '%s' with ID=%s, Resource=%s, ValueType=%s, Value=`%s`",
+			lc.Debugf("Reading #%d received in pipeline '%s' with ID=%s, Resource=%s, ValueType=%s, Value=`%s`",
 				index+1,
 				ctx.PipelineId(),
 				reading.Id,
@@ -111,14 +110,12 @@ func (pf *pipelinefunction) FacialAndEEGModels(ctx interfaces.AppFunctionContext
 
 	//save result
 	for _, reading := range event.Readings {
-
-		//lc.Infof("%s\n", reading.ObjectReading.ObjectValue)
 		pf.resourcename = reading.ResourceName
 		pf.result, ok = reading.ObjectReading.ObjectValue.(map[string]interface{})
 		if !ok {
 			fmt.Println("Failed to convert ObjectReading to map[string]string")
 		}
-		lc.Infof("success to convert ObjectReading to map[string]interface{}")
+		lc.Debugf("success to convert ObjectReading to map[string]interface{}")
 	}
 
 	var rpcAddr = fmt.Sprintf("%s:%d", pf.rpcServerInfo.Host, pf.rpcServerInfo.Port)
@@ -128,14 +125,14 @@ func (pf *pipelinefunction) FacialAndEEGModels(ctx interfaces.AppFunctionContext
 	if !ok {
 		return false, fmt.Errorf("image_data is not string, data content: %s", image)
 	}
-	lc.Infof("success to convert image_data to string value")
+	lc.Debugf("success to convert image_data to string value")
 
 	var eeg = pf.result["eeg_data"]
 	eegValue, ok := eeg.(string)
 	if !ok {
 		return false, fmt.Errorf("eeg_data is not string, data content: %s", eeg)
 	}
-	lc.Infof("success to convert eeg_data to string value")
+	lc.Debugf("success to convert eeg_data to string value")
 
 	output, err := SendGRpcRequest(rpcAddr, imageValue, eegValue, pf.rpcServerInfo.Timeout)
 	if err != nil {
@@ -153,31 +150,6 @@ func (pf *pipelinefunction) FacialAndEEGModels(ctx interfaces.AppFunctionContext
 func (pf *pipelinefunction) SendEventToCloud(ctx interfaces.AppFunctionContext, data interface{}) (bool, interface{}) {
 	lc := ctx.LoggingClient()
 	lc.Debugf("SendEventToCloud called in pipeline '%s'", ctx.PipelineId())
-
-	// if data == nil {
-	// 	return false, fmt.Errorf("function SendEventToCloud in pipeline '%s': No Data Received", ctx.PipelineId())
-	// }
-	// lc.Infof("%s", pf.host)
-	// lc.Infof("%d", pf.port)
-	// jsonData, err := json.Marshal(pf.result)
-	// if err != nil {
-	// 	fmt.Println("Error encoding JSON:", err.Error())
-	// }
-	// lc.Infof("%s", reflect.TypeOf(jsonData))
-	// //lc.Infof("%s", jsonData)
-
-	// conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", pf.host, pf.port))
-	// if err != nil {
-	// 	fmt.Errorf("fail connected:", err)
-	// }
-	// defer conn.Close()
-
-	// //strData := fmt.Sprintf("%v", pf.jsonData)
-	// _, err = conn.Write(jsonData)
-	// if err != nil {
-	// 	fmt.Errorf("failed send data:", err)
-	// }
-	// fmt.Println("send data successfully.")
 
 	if pf.eventsSendToCloud == nil {
 		var err error
@@ -201,22 +173,23 @@ func (pf *pipelinefunction) SendEventToCloud(ctx interfaces.AppFunctionContext, 
 }
 
 func SendGRpcRequest(serverAddress string, imagedata string, eegdata string, timeOut int) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeOut)*time.Second)
+	defer cancel()
+
 	beginTime := time.Now() // 开始时间, 计算函数运行时间
 
 	// Set up a connection to the server.
-	conn, err := grpc.Dial(serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.DialContext(ctx, serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		return "", errors.Errorf("cannot connect to RPC server: %v", err)
+		return "", fmt.Errorf("cannot connect to RPC server: %v", err)
 	}
 	defer conn.Close()
 	c := pb.NewGRpcServiceClient(conn)
 
-	// Contact the server and print out its response.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeOut)*time.Second)
-	defer cancel()
+	// Contact the server, calculate the execution time and return its response.
 	r, err := c.ModelProcess(ctx, &pb.ModelProcessRequest{ImageData: imagedata, EegData: eegdata})
 	if err != nil {
-		return "", errors.Errorf("fail to get response from rpc server, fail reason: %v", err)
+		return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
 	}
 
 	endTime := time.Since(beginTime) // 从开始到当前所消耗的时间
