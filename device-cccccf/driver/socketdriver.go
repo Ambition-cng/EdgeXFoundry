@@ -114,7 +114,14 @@ func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[strin
 			return nil, err
 		}
 
-		s.lc.Infof(fmt.Sprintf("successfully received data from device : %s, ip : %s", deviceName, s.deviceInfo[deviceName].deviceIP))
+		var seq = s.result["seq"]
+		seqValue, ok := seq.(float64)
+		if !ok {
+			return nil, fmt.Errorf("seq is not float64, data content: %s", seq)
+		}
+		s.lc.Debugf("success to convert seq to float64 value")
+
+		s.lc.Infof(fmt.Sprintf("successfully received data from device : %s, ip : %s, data seq : %.0f", deviceName, s.deviceInfo[deviceName].deviceIP, seqValue))
 		s.lc.Debugf(fmt.Sprintf("data content: %s", s.result))
 
 		cv, err := sdkModels.NewCommandValue(reqs[0].DeviceResourceName, common.ValueTypeObject, s.result)

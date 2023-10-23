@@ -55,7 +55,7 @@ func (pf *pipelinefunction) LogEventDetails(ctx interfaces.AppFunctionContext, d
 		return false, fmt.Errorf("function LogEventDetails in pipeline '%s', type received is not an Event", ctx.PipelineId())
 	}
 
-	lc.Infof("Event received in pipeline '%s': ID=%s, Device=%s, and ReadingCount=%d",
+	lc.Debugf("Event received in pipeline '%s': ID=%s, Device=%s, and ReadingCount=%d",
 		ctx.PipelineId(),
 		event.Id,
 		event.DeviceName,
@@ -134,12 +134,19 @@ func (pf *pipelinefunction) FacialAndEEGModels(ctx interfaces.AppFunctionContext
 	}
 	lc.Debugf("success to convert eeg_data to string value")
 
+	var seq = pf.result["seq"]
+	seqValue, ok := seq.(float64)
+	if !ok {
+		return false, fmt.Errorf("seq is not float64, data content: %s", seq)
+	}
+	lc.Debugf("success to convert seq to float64 value")
+
 	output, err := SendGRpcRequest(rpcAddr, imageValue, eegValue, pf.rpcServerInfo.Timeout)
 	if err != nil {
 		return false, err
 	}
 
-	lc.Infof("response from rpc server : %s", output)
+	lc.Infof("input data seq : %d, got response from rpc server : %s", int(seqValue), output)
 
 	//save analyseresult
 	pf.result["analyseresult"] = strings.TrimRight(string(output), "\n")
@@ -193,6 +200,6 @@ func SendGRpcRequest(serverAddress string, imagedata string, eegdata string, tim
 	}
 
 	endTime := time.Since(beginTime) // 从开始到当前所消耗的时间
-	fmt.Println("Function SendGRpcRequest run time: ", endTime)
+	fmt.Printf("Function SendGRpcRequest run time: %s\n", endTime.String())
 	return r.GetResult(), nil
 }
