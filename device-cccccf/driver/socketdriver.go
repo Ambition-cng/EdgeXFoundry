@@ -114,14 +114,20 @@ func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[strin
 			return nil, err
 		}
 
-		var seq = s.result["seq"]
-		seqValue, ok := seq.(float64)
-		if !ok {
-			return nil, fmt.Errorf("seq is not float64, data content: %s", seq)
+		stringValues, err := s.parseStringValue(s.result["stu_name"], s.result["stu_id"])
+		if err != nil {
+			return nil, err
 		}
-		s.lc.Debugf("success to convert seq to float64 value")
+		stuNameValue, stuIDValue := stringValues[0], stringValues[1]
 
-		s.lc.Infof(fmt.Sprintf("successfully received data from device : %s, ip : %s, data seq : %.0f", deviceName, s.deviceInfo[deviceName].deviceIP, seqValue))
+		floatValues, err := s.parseFloat64Value(s.result["seq"])
+		if err != nil {
+			return nil, err
+		}
+		seqValue := floatValues[0]
+
+		s.lc.Infof(fmt.Sprintf("successfully received data from device : %s, ip : %s, student name : %s, studend ID : %s, data seq : %d",
+			deviceName, s.deviceInfo[deviceName].deviceIP, stuNameValue, stuIDValue, int(seqValue)))
 		s.lc.Debugf(fmt.Sprintf("data content: %s", s.result))
 
 		cv, err := sdkModels.NewCommandValue(reqs[0].DeviceResourceName, common.ValueTypeObject, s.result)
@@ -136,68 +142,6 @@ func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[strin
 	}
 
 	return nil, err
-}
-
-func (s *SocketDriver) HandleWriteCommands(deviceName string, protocols map[string]models.ProtocolProperties, reqs []sdkModels.CommandRequest, params []*sdkModels.CommandValue) error {
-	return nil
-}
-
-func (s *SocketDriver) Stop(force bool) error {
-	// 关闭所有socket连接
-	for _, v := range s.deviceInfo {
-		v.conn.Close()
-	}
-	s.eegandfaciallistener.Close()
-	return nil
-}
-
-func (s *SocketDriver) AddDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
-	s.lc.Infof("a new Device is added, deviceName: %s, host : %s", deviceName, protocols["socket"]["Host"])
-	s.deviceInfo[deviceName] = DeviceInfo{
-		deviceIP: protocols["socket"]["Host"],
-		conn:     nil,
-	}
-	return nil
-}
-
-func (s *SocketDriver) UpdateDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
-	if s.deviceInfo[deviceName].deviceIP != protocols["socket"]["Host"]+":"+protocols["socket"]["Port"] {
-		s.deviceInfo[deviceName].conn.Close()
-		s.deviceInfo[deviceName] = DeviceInfo{
-			deviceIP: protocols["socket"]["Host"],
-			conn:     nil,
-		}
-		s.lc.Infof("Device's netInfo changed, close the connection between device-service and %s", deviceName)
-	}
-	return nil
-}
-
-func (s *SocketDriver) RemoveDevice(deviceName string, protocols map[string]models.ProtocolProperties) error {
-	// 关闭设备关联的socket连接
-	s.lc.Infof("Device %s is removed, close the connection between device-service and %s", deviceName)
-	s.deviceInfo[deviceName].conn.Close()
-
-	delete(s.deviceInfo, deviceName)
-	return nil
-}
-
-func (s *SocketDriver) Discover() {
-}
-
-func (s *SocketDriver) ValidateDevice(device models.Device) error {
-	protocol, ok := device.Protocols["socket"]
-	if !ok {
-		return errors.New("missing 'socket' protocols")
-	}
-
-	host, ok := protocol["Host"]
-	if !ok {
-		return errors.New("missing 'Host' information")
-	} else if host == "" {
-		return errors.New("host must not empty")
-	}
-
-	return nil
 }
 
 func (s *SocketDriver) ListeningToClients(listener net.Listener) {
@@ -254,4 +198,94 @@ func (s *SocketDriver) DecodeJsonData(conn net.Conn) (map[string]interface{}, er
 	}
 
 	return jsonData, nil
+}
+
+func (s *SocketDriver) parseStringValue(values ...interface{}) ([]string, error) {
+	var strs []string
+	for _, value := range values {
+		switch v := value.(type) {
+		case string:
+			strs = append(strs, v)
+		default:
+			return nil, fmt.Errorf("value is not string, data content: %s", value)
+		}
+	}
+
+	return strs, nil
+}
+
+func (s *SocketDriver) parseFloat64Value(values ...interface{}) ([]float64, error) {
+	var floats []float64
+	for _, value := range values {
+		switch v := value.(type) {
+		case float64:
+			floats = append(floats, v)
+		default:
+			return nil, fmt.Errorf("value is not float64, data content: %s", value)
+		}
+	}
+
+	return floats, nil
+}
+
+func (s *SocketDriver) Stop(force bool) error {
+	// 关闭所有socket连接
+	for _, v := range s.deviceInfo {
+		v.conn.Close()
+	}
+	s.eegandfaciallistener.Close()
+	return nil
+}
+
+func (s *SocketDriver) HandleWriteCommands(deviceName string, protocols map[string]models.ProtocolProperties, reqs []sdkModels.CommandRequest, params []*sdkModels.CommandValue) error {
+	return nil
+}
+
+func (s *SocketDriver) AddDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
+	s.lc.Infof("a new Device is added, deviceName: %s, host : %s", deviceName, protocols["socket"]["Host"])
+	s.deviceInfo[deviceName] = DeviceInfo{
+		deviceIP: protocols["socket"]["Host"],
+		conn:     nil,
+	}
+	return nil
+}
+
+func (s *SocketDriver) UpdateDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
+	if s.deviceInfo[deviceName].deviceIP != protocols["socket"]["Host"]+":"+protocols["socket"]["Port"] {
+		s.deviceInfo[deviceName].conn.Close()
+		s.deviceInfo[deviceName] = DeviceInfo{
+			deviceIP: protocols["socket"]["Host"],
+			conn:     nil,
+		}
+		s.lc.Infof("Device's netInfo changed, close the connection between device-service and %s", deviceName)
+	}
+	return nil
+}
+
+func (s *SocketDriver) RemoveDevice(deviceName string, protocols map[string]models.ProtocolProperties) error {
+	// 关闭设备关联的socket连接
+	s.lc.Infof("Device %s is removed, close the connection between device-service and %s", deviceName)
+	s.deviceInfo[deviceName].conn.Close()
+
+	delete(s.deviceInfo, deviceName)
+	return nil
+}
+
+func (s *SocketDriver) Discover() {
+}
+
+func (s *SocketDriver) ValidateDevice(device models.Device) error {
+	protocol, ok := device.Protocols["socket"]
+	if !ok {
+		return errors.New("missing 'socket' protocols")
+	}
+
+	host, ok := protocol["Host"]
+	if !ok {
+		return errors.New("missing 'Host' information")
+	} else if host == "" {
+		return errors.New("host must not empty")
+	}
+
+	return nil
 }
