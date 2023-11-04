@@ -110,6 +110,8 @@ TokenFile = "/tmp/edgex/secrets/device-cccccf/secrets-token.json"
 
 [SocketInfo]
 Host = "localhost"
-EEGAndFacialPort = "10024"
+SocketServerPort = "10024"
 BufferSize = 1024
 SocketType = "tcp"
+StudentAndClassInfoPostURL = "http://127.0.0.1:8080/students-classes"
+TimeOut = 10

@@ -28,21 +28,38 @@ import (
 	"reflect"
 )
 
+type StudentEyeKmFeature struct {
+	StudentID             string `json:"student_id"`
+	ClassID               string `json:"class_id"`
+	EyeKmCollectTimestamp string `json:"eye_km_collect_timestamp"`
+	EyeTrackingData       []byte `json:"eye_tracking_data"`
+	KeyboadrMouseData     []byte `json:"keyboadr_mouse_data"`
+	EyeKmModelResult      string `json:"eye_km_model_result"`
+}
+
+type StudentFacialEEGFeature struct {
+	StudentID                 string `json:"student_id"`
+	ClassID                   string `json:"class_id"`
+	FacialEegCollectTimestamp string `json:"facial_eeg_collect_timestamp"`
+	FacialExpression          []byte `json:"facial_expression"`
+	EegData                   []byte `json:"eeg_data"`
+	FacialEegModelResult      string `json:"facial_eeg_model_result"`
+}
+
 type ServiceConfig struct {
 	APPService APPServiceConfig
 }
 
 type APPServiceConfig struct {
-	ResourceNames   string
 	RPCServerInfo   RemoteServerInfo
 	CloudServerInfo RemoteServerInfo
 }
 
 type RemoteServerInfo struct {
-	Host     string
-	Port     int
-	Timeout  int
-	Protocol string
+	FacialAndEEGUrl string
+	EyeAndKmUrl     string
+	Timeout         int
+	Protocol        string
 }
 
 // TODO: Update using your Custom configuration type.
@@ -62,10 +79,6 @@ func (c *ServiceConfig) UpdateFromRaw(rawConfig interface{}) bool {
 // Validate ensures your custom configuration has proper values.
 // TODO: Update to properly validate your custom configuration
 func (asc *APPServiceConfig) Validate() error {
-	if asc.ResourceNames == "" {
-		return errors.New("ResourceNames cannot be none")
-	}
-
 	if reflect.DeepEqual(asc.RPCServerInfo, RemoteServerInfo{}) {
 		return errors.New("RPCServerInfo is not set")
 	}

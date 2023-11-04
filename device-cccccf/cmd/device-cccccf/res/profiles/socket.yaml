@@ -8,10 +8,18 @@ labels:
 
 deviceResources:
   -
-    name: "EEGAndFacial"
+    name: "FacialAndEEG"
     isHidden: true
-    description: "student EEGAndFacial."
+    description: "student FacialAndEEG."
     properties:
       valueType: "String"
       readWrite: "RW"
       mediaType: "EEG/Image"
+  -
+    name: "EyeAndKm"
+    isHidden: true
+    description: "student EyeAndKm."
+    properties:
+      valueType: "String"
+      readWrite: "RW"
+      mediaType: "Eye/Keyboard/Mouse"

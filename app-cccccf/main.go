@@ -39,7 +39,6 @@ type myApp struct {
 	service       interfaces.ApplicationService
 	lc            logger.LoggingClient
 	serviceConfig *config.ServiceConfig
-	configChanged chan bool
 }
 
 func main() {
@@ -110,9 +109,9 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 	// Note: This example with default above causes Events from Int32 source to be processed twice
 	//       resulting in the XML to be published back to the MessageBus twice.
 	// See https://docs.edgexfoundry.org/2.2/microservices/application/AdvancedTopics/#pipeline-per-topics for more details.
-	err = app.service.AddFunctionsPipelineForTopics("EEGAndFacials", []string{"edgex/events/#/#/#/EEGAndFacial"},
+	err = app.service.AddFunctionsPipelineForTopics("Features", []string{"edgex/events/#/#/#/FacialAndEEG", "edgex/events/#/#/#/EyeAndKm"},
 		pipelinefunction.LogEventDetails,
-		pipelinefunction.FacialAndEEGModels,
+		pipelinefunction.ModelProcess,
 		pipelinefunction.SendEventToCloud)
 	if err != nil {
 		app.lc.Errorf("AddFunctionsPipelineForTopic returned error: %s", err.Error())
@@ -148,9 +147,6 @@ func (app *myApp) ProcessConfigUpdates(rawWritableConfig interface{}) {
 		return
 	}
 
-	if previous.ResourceNames != updated.ResourceNames {
-		app.lc.Infof("APPService.ResourceNames changed to: %d", updated.ResourceNames)
-	}
 	if !reflect.DeepEqual(previous.RPCServerInfo, updated.RPCServerInfo) {
 		app.lc.Infof("APPService.RPCServerInfo changed to: %v", updated.RPCServerInfo)
 	}

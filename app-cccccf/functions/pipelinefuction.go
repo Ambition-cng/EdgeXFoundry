@@ -1,17 +1,16 @@
 package functions
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-
-	gometrics "github.com/rcrowley/go-metrics"
 
 	"github.com/edgexfoundry/app-functions-sdk-go/v2/pkg/interfaces"
 
@@ -22,8 +21,6 @@ import (
 	pb "github.com/edgexfoundry/app-cccccf/protobuf"
 )
 
-const eventsSendToCloudName = "eventsSendToCloud"
-
 func Newpipelinefunction(rpcServer config.RemoteServerInfo, cloudServer config.RemoteServerInfo) *pipelinefunction {
 	return &pipelinefunction{
 		rpcServerInfo:   rpcServer,
@@ -32,11 +29,6 @@ func Newpipelinefunction(rpcServer config.RemoteServerInfo, cloudServer config.R
 }
 
 type pipelinefunction struct {
-	// TODO: Remove pipelinefunction metric and implement meaningful metrics if any needed.
-	eventsSendToCloud gometrics.Counter
-	// TODO: Add properties that the function(s) will need each time one is executed
-	result          map[string]interface{}
-	resourcename    string
 	rpcServerInfo   config.RemoteServerInfo
 	cloudServerInfo config.RemoteServerInfo
 }
@@ -96,84 +88,150 @@ func (pf *pipelinefunction) LogEventDetails(ctx interfaces.AppFunctionContext, d
 	return true, event
 }
 
-func (pf *pipelinefunction) FacialAndEEGModels(ctx interfaces.AppFunctionContext, data interface{}) (bool, interface{}) {
+func (pf *pipelinefunction) ModelProcess(ctx interfaces.AppFunctionContext, data interface{}) (bool, interface{}) {
 	lc := ctx.LoggingClient()
-	lc.Debugf("FacialAndEEGModels called in pipeline '%s'", ctx.PipelineId())
+	lc.Debugf("ModelProcess called in pipeline '%s'", ctx.PipelineId())
 
 	if data == nil {
-		return false, fmt.Errorf("function FacialAndEEGModels in pipeline '%s': No Data Received", ctx.PipelineId())
+		return false, fmt.Errorf("function ModelProcess in pipeline '%s': No Data Received", ctx.PipelineId())
 	}
 	event, ok := data.(dtos.Event)
 	if !ok {
-		return false, fmt.Errorf("function FacialAndEEGModels in pipeline '%s', type received is not an Event", ctx.PipelineId())
+		return false, fmt.Errorf("function ModelProcess in pipeline '%s', type received is not an Event", ctx.PipelineId())
 	}
 
-	//save result
+	var result map[string]interface{}
+	var resourcename string
+	// get data from devcie service, for-loop only executes once
 	for _, reading := range event.Readings {
-		pf.resourcename = reading.ResourceName
-		pf.result, ok = reading.ObjectReading.ObjectValue.(map[string]interface{})
+		resourcename = reading.ResourceName
+		result, ok = reading.ObjectReading.ObjectValue.(map[string]interface{})
 		if !ok {
 			fmt.Println("Failed to convert ObjectReading to map[string]string")
 		}
 		lc.Debugf("success to convert ObjectReading to map[string]interface{}")
 	}
 
-	var rpcAddr = fmt.Sprintf("%s:%d", pf.rpcServerInfo.Host, pf.rpcServerInfo.Port)
+	if resourcename == "FacialAndEEG" {
+		// initialize rpc info and send
+		rpcAddr := pf.rpcServerInfo.FacialAndEEGUrl
+		stringValues, err := pf.parseStringValue(result["student_id"], result["class_id"], result["facial_eeg_collect_timestamp"], result["image_data"], result["eeg_data"])
+		if err != nil {
+			return false, err
+		}
+		studentIDValue, classIDValue, facial_eeg_collect_timestamp, imageValue, eegValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3], stringValues[4]
 
-	stringValues, err := pf.parseStringValue(pf.result["image_data"], pf.result["eeg_data"], pf.result["stu_name"], pf.result["stu_id"])
-	if err != nil {
-		return false, err
+		facial_eeg_model_result, err := SendGRpcRequest(resourcename, rpcAddr, imageValue, eegValue, pf.rpcServerInfo.Timeout)
+		if err != nil {
+			return false, err
+		}
+
+		lc.Infof("studend ID : %s, class ID : %s, facial_eeg_collect_timestamp : %s, got response from rpc server : %s", studentIDValue, classIDValue, facial_eeg_collect_timestamp, facial_eeg_model_result)
+
+		studentFacialEEGFeature := config.StudentFacialEEGFeature{
+			StudentID:                 studentIDValue,
+			ClassID:                   classIDValue,
+			FacialEegCollectTimestamp: facial_eeg_collect_timestamp,
+			FacialExpression:          []byte(imageValue),
+			EegData:                   []byte(eegValue),
+			FacialEegModelResult:      strings.TrimRight(facial_eeg_model_result, "\n"),
+		}
+		return true, studentFacialEEGFeature
+	} else if resourcename == "EyeAndKm" {
+		// initialize rpc info and send
+		rpcAddr := pf.rpcServerInfo.EyeAndKmUrl
+		stringValues, err := pf.parseStringValue(result["student_id"], result["class_id"], result["eye_km_collect_timestamp"], result["eye_tracking_data"], result["keyboadr_mouse_data"])
+		if err != nil {
+			return false, err
+		}
+		studentIDValue, classIDValue, eye_km_collect_timestamp, eyeValue, kmValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3], stringValues[4]
+
+		eye_km_model_result, err := SendGRpcRequest(resourcename, rpcAddr, eyeValue, kmValue, pf.rpcServerInfo.Timeout)
+		if err != nil {
+			return false, err
+		}
+
+		lc.Infof("studend ID : %s, class ID : %s, eye_km_collect_timestamp : %s, got response from rpc server : %s", studentIDValue, classIDValue, eye_km_collect_timestamp, eye_km_model_result)
+
+		studentEyeKmFeature := config.StudentEyeKmFeature{
+			StudentID:             studentIDValue,
+			ClassID:               classIDValue,
+			EyeKmCollectTimestamp: eye_km_collect_timestamp,
+			EyeTrackingData:       []byte(eyeValue),
+			KeyboadrMouseData:     []byte(kmValue),
+			EyeKmModelResult:      strings.TrimRight(eye_km_model_result, "\n"),
+		}
+		return true, studentEyeKmFeature
 	}
-	imageValue, eegValue, stuNameValue, stuIDValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3]
 
-	floatValues, err := pf.parseFloat64Value(pf.result["seq"])
-	if err != nil {
-		return false, err
-	}
-	seqValue := floatValues[0]
-
-	output, err := SendGRpcRequest(rpcAddr, imageValue, eegValue, pf.rpcServerInfo.Timeout)
-	if err != nil {
-		return false, err
-	}
-
-	lc.Infof("student name : %s, studend ID : %s, input data seq : %d, got response from rpc server : %s", stuNameValue, stuIDValue, int(seqValue), output)
-
-	//save analyseresult
-	pf.result["analyseresult"] = strings.TrimRight(string(output), "\n")
-
-	return true, event
+	return false, fmt.Errorf("invalid resourcename, got : %s", resourcename)
 }
 
 func (pf *pipelinefunction) SendEventToCloud(ctx interfaces.AppFunctionContext, data interface{}) (bool, interface{}) {
 	lc := ctx.LoggingClient()
 	lc.Debugf("SendEventToCloud called in pipeline '%s'", ctx.PipelineId())
 
-	if pf.eventsSendToCloud == nil {
-		var err error
-
-		pf.eventsSendToCloud = gometrics.NewCounter()
-		metricsManger := ctx.MetricsManager()
-		if metricsManger != nil {
-			err = metricsManger.Register(eventsSendToCloudName, pf.eventsSendToCloud, nil)
-		} else {
-			err = errors.New("metrics manager not available")
-		}
-
-		if err != nil {
-			lc.Errorf("Unable to register metric %pf. Collection will continue, but metric will not be reported: %s", eventsSendToCloudName, err.Error())
-		}
-
+	if data == nil {
+		return false, fmt.Errorf("function SendEventToCloud in pipeline '%s': No Data Received", ctx.PipelineId())
 	}
-	pf.eventsSendToCloud.Inc(1)
 
-	return true, nil
+	var err error
+	var url string
+	var jsonData []byte
+	// 将数据转换为 json
+	switch t := data.(type) {
+	case config.StudentFacialEEGFeature:
+		url = pf.cloudServerInfo.FacialAndEEGUrl
+		jsonData, err = json.Marshal(data.(config.StudentFacialEEGFeature))
+	case config.StudentEyeKmFeature:
+		url = pf.cloudServerInfo.EyeAndKmUrl
+		jsonData, err = json.Marshal(data.(config.StudentEyeKmFeature))
+	default:
+		return false, fmt.Errorf("unexpected type of data : %T", t)
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("error occurred while encoding studentEyeKmFeature data: %v", err)
+	}
+
+	// 创建新的 http POST 请求
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return false, fmt.Errorf("error occurred while creating HTTP request: %v", err)
+	}
+
+	// 设置 header 信息，告知服务器端发送的是 json 数据格式
+	req.Header.Set("Content-Type", "application/json")
+
+	// 创建一个带有超时时间的 context
+	httpCtx, cancel := context.WithTimeout(context.Background(), time.Duration(pf.cloudServerInfo.Timeout)*time.Second)
+	defer cancel()
+
+	// 将创建的 context 附加到 http request 上
+	req = req.WithContext(httpCtx)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("error occurred while sending HTTP request: %v", err)
+	}
+
+	defer resp.Body.Close()
+
+	// 检查响应状态码
+	if resp.StatusCode == http.StatusOK {
+		fmt.Printf("Successfully post facial and eeg feature, http response's StatusCode : %d\n", resp.StatusCode)
+		return true, nil
+	} else {
+		return false, fmt.Errorf("failed to post facial and eeg feature, http response's StatusCode : %d", resp.StatusCode)
+	}
 }
 
-func SendGRpcRequest(serverAddress string, imagedata string, eegdata string, timeOut int) (string, error) {
+func SendGRpcRequest(resourcename string, serverAddress string, featureData string, eegdata string, timeOut int) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeOut)*time.Second)
 	defer cancel()
 
+	var result string
 	beginTime := time.Now() // 开始时间, 计算函数运行时间
 
 	// Set up a connection to the server.
@@ -182,17 +240,24 @@ func SendGRpcRequest(serverAddress string, imagedata string, eegdata string, tim
 		return "", fmt.Errorf("cannot connect to RPC server: %v", err)
 	}
 	defer conn.Close()
-	c := pb.NewGRpcServiceClient(conn)
 
-	// Contact the server, calculate the execution time and return its response.
-	r, err := c.ModelProcess(ctx, &pb.ModelProcessRequest{ImageData: imagedata, EegData: eegdata})
-	if err != nil {
-		return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
+	if resourcename == "FacialAndEEG" {
+		c := pb.NewGRpcServiceClient(conn)
+
+		// Contact the server, get its response.
+		r, err := c.ModelProcess(ctx, &pb.ModelProcessRequest{ImageData: featureData, EegData: eegdata})
+		if err != nil {
+			return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
+		}
+
+		result = r.GetResult()
+	} else { // EyeAndKm Part
+		result = ""
 	}
 
 	endTime := time.Since(beginTime) // 从开始到当前所消耗的时间
 	fmt.Printf("Function SendGRpcRequest run time: %s\n", endTime.String())
-	return r.GetResult(), nil
+	return result, nil
 }
 
 func (pf *pipelinefunction) parseStringValue(values ...interface{}) ([]string, error) {
@@ -207,18 +272,4 @@ func (pf *pipelinefunction) parseStringValue(values ...interface{}) ([]string, e
 	}
 
 	return strs, nil
-}
-
-func (pf *pipelinefunction) parseFloat64Value(values ...interface{}) ([]float64, error) {
-	var floats []float64
-	for _, value := range values {
-		switch v := value.(type) {
-		case float64:
-			floats = append(floats, v)
-		default:
-			return nil, fmt.Errorf("value is not float64, data content: %s", value)
-		}
-	}
-
-	return floats, nil
 }

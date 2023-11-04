@@ -5,8 +5,18 @@
   Labels = [ "socket" ]
   [DeviceList.Protocols]
   [DeviceList.Protocols.socket]
-    Host = "192.168.31.70"
+    FacialEEGIP = "192.168.31.70:10001"
+    EyeKmIP = "192.168.31.70:10002"
+  [DeviceList.Protocols.StudentAndClassInfo]
+    student_id = "DataPlatformS001"
+    student_name = "Testing"
+    class_id = "DataPlatformC001"
+    teacher_name = "cccccf"
   [[DeviceList.AutoEvents]]
     Interval = "20ms"
     OnChange = false
-    SourceName = "EEGAndFacial"
+    SourceName = "FacialAndEEG"
+  [[DeviceList.AutoEvents]]
+    Interval = "20s"
+    OnChange = false
+    SourceName = "EyeAndKm"

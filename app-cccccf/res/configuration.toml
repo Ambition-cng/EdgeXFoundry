@@ -166,14 +166,13 @@ DeviceNames = "default-socket-device"
 # This can be any structure you need, but it can not contain slices. Use a maps instead of slices.
 # For more details see: https://docs.edgexfoundry.org/2.2/microservices/application/GeneralAppServiceConfig/#custom-configuration
 [APPService]
-ResourceNames = "EEGAndFacial"
 [APPService.RPCServerInfo]
-  Host = "192.168.31.70"
-  Port = 50052
+  FacialAndEEGUrl = "192.168.31.70:50052"
+  EyeAndKmUrl = "0.0.0.0:0"
   Timeout = 10
   Protocol = "grpc"
 [APPService.CloudServerInfo]
-  Host = "0.0.0.0"
-  Port = 1025
+  FacialAndEEGUrl = "http://127.0.0.1:8080/facialeegfeatures/"
+  EyeAndKmUrl = "http://127.0.0.1:8080/eyekmfeatures/"
   Timeout = 10
-  Protocol = "socket"
+  Protocol = "http"
