@@ -167,7 +167,7 @@ DeviceNames = "default-socket-device"
 # For more details see: https://docs.edgexfoundry.org/2.2/microservices/application/GeneralAppServiceConfig/#custom-configuration
 [APPService]
 [APPService.RPCServerInfo]
-  FacialAndEEGUrl = "192.168.31.70:50052"
+  FacialAndEEGUrl = "127.0.0.1:50052"
   EyeAndKmUrl = "0.0.0.0:0"
   Timeout = 10
   Protocol = "grpc"

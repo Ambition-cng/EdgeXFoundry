@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,24 +114,35 @@ func (pf *pipelinefunction) ModelProcess(ctx interfaces.AppFunctionContext, data
 	}
 
 	if resourcename == "FacialAndEEG" {
-		// initialize rpc info and send
-		rpcAddr := pf.rpcServerInfo.FacialAndEEGUrl
-		stringValues, err := pf.parseStringValue(result["student_id"], result["class_id"], result["facial_eeg_collect_timestamp"], result["image_data"], result["eeg_data"])
+		var pointerTaskID *int = nil
+		// 判断result中是否存在task_id字段
+		if strValue, ok := result["task_id"].(string); ok {
+			// 将task_id解析为int类型的值
+			taskID, err := strconv.Atoi(strValue)
+			if err != nil {
+				return false, fmt.Errorf("error converting value to int: %v", err)
+			}
+			pointerTaskID = &taskID
+		}
+
+		stringValues, err := parseStringValue(result["seq"], result["student_id"], result["facial_eeg_collect_timestamp"], result["image_data"], result["eeg_data"])
 		if err != nil {
 			return false, err
 		}
-		studentIDValue, classIDValue, facial_eeg_collect_timestamp, imageValue, eegValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3], stringValues[4]
+		seqValue, studentIDValue, facial_eeg_collect_timestamp, imageValue, eegValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3], stringValues[4]
 
+		// initialize rpc info and send
+		rpcAddr := pf.rpcServerInfo.FacialAndEEGUrl
 		facial_eeg_model_result, err := SendGRpcRequest(resourcename, rpcAddr, imageValue, eegValue, pf.rpcServerInfo.Timeout)
 		if err != nil {
 			return false, err
 		}
 
-		lc.Infof("studend ID : %s, class ID : %s, facial_eeg_collect_timestamp : %s, got response from rpc server : %s", studentIDValue, classIDValue, facial_eeg_collect_timestamp, facial_eeg_model_result)
+		lc.Infof("data seq : %s, studend ID : %s, facial_eeg_collect_timestamp : %s, got response from rpc server : %s", seqValue, studentIDValue, facial_eeg_collect_timestamp, facial_eeg_model_result)
 
 		studentFacialEEGFeature := config.StudentFacialEEGFeature{
 			StudentID:                 studentIDValue,
-			ClassID:                   classIDValue,
+			TaskID:                    pointerTaskID,
 			FacialEegCollectTimestamp: facial_eeg_collect_timestamp,
 			FacialExpression:          []byte(imageValue),
 			EegData:                   []byte(eegValue),
@@ -138,24 +150,30 @@ func (pf *pipelinefunction) ModelProcess(ctx interfaces.AppFunctionContext, data
 		}
 		return true, studentFacialEEGFeature
 	} else if resourcename == "EyeAndKm" {
-		// initialize rpc info and send
-		rpcAddr := pf.rpcServerInfo.EyeAndKmUrl
-		stringValues, err := pf.parseStringValue(result["student_id"], result["class_id"], result["eye_km_collect_timestamp"], result["eye_tracking_data"], result["keyboadr_mouse_data"])
+		var pointerTaskID *int = nil
+		taskID, ok := result["task_id"].(int)
+		if ok {
+			pointerTaskID = &taskID
+		}
+
+		stringValues, err := parseStringValue(result["student_id"], result["eye_km_collect_timestamp"], result["eye_tracking_data"], result["keyboadr_mouse_data"])
 		if err != nil {
 			return false, err
 		}
-		studentIDValue, classIDValue, eye_km_collect_timestamp, eyeValue, kmValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3], stringValues[4]
+		studentIDValue, eye_km_collect_timestamp, eyeValue, kmValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3]
 
+		// initialize rpc info and send
+		rpcAddr := pf.rpcServerInfo.EyeAndKmUrl
 		eye_km_model_result, err := SendGRpcRequest(resourcename, rpcAddr, eyeValue, kmValue, pf.rpcServerInfo.Timeout)
 		if err != nil {
 			return false, err
 		}
 
-		lc.Infof("studend ID : %s, class ID : %s, eye_km_collect_timestamp : %s, got response from rpc server : %s", studentIDValue, classIDValue, eye_km_collect_timestamp, eye_km_model_result)
+		lc.Infof("studend ID : %s, eye_km_collect_timestamp : %s, got response from rpc server : %s", studentIDValue, eye_km_collect_timestamp, eye_km_model_result)
 
 		studentEyeKmFeature := config.StudentEyeKmFeature{
 			StudentID:             studentIDValue,
-			ClassID:               classIDValue,
+			TaskID:                pointerTaskID,
 			EyeKmCollectTimestamp: eye_km_collect_timestamp,
 			EyeTrackingData:       []byte(eyeValue),
 			KeyboadrMouseData:     []byte(kmValue),
@@ -260,7 +278,7 @@ func SendGRpcRequest(resourcename string, serverAddress string, featureData stri
 	return result, nil
 }
 
-func (pf *pipelinefunction) parseStringValue(values ...interface{}) ([]string, error) {
+func parseStringValue(values ...interface{}) ([]string, error) {
 	var strs []string
 	for _, value := range values {
 		switch v := value.(type) {

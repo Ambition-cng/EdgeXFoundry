@@ -30,7 +30,7 @@ import (
 
 type StudentEyeKmFeature struct {
 	StudentID             string `json:"student_id"`
-	ClassID               string `json:"class_id"`
+	TaskID                *int   `json:"task_id,omitempty"`
 	EyeKmCollectTimestamp string `json:"eye_km_collect_timestamp"`
 	EyeTrackingData       []byte `json:"eye_tracking_data"`
 	KeyboadrMouseData     []byte `json:"keyboadr_mouse_data"`
@@ -39,7 +39,7 @@ type StudentEyeKmFeature struct {
 
 type StudentFacialEEGFeature struct {
 	StudentID                 string `json:"student_id"`
-	ClassID                   string `json:"class_id"`
+	TaskID                    *int   `json:"task_id,omitempty"`
 	FacialEegCollectTimestamp string `json:"facial_eeg_collect_timestamp"`
 	FacialExpression          []byte `json:"facial_expression"`
 	EegData                   []byte `json:"eeg_data"`
