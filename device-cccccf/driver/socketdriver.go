@@ -26,9 +26,7 @@ type SocketDriver struct {
 	lc                    logger.LoggingClient
 	asyncCh               chan<- *sdkModels.AsyncValues
 	deviceCh              chan<- []sdkModels.DiscoveredDevice
-	mtx                   sync.RWMutex
-	result                map[string]interface{}
-	deviceInfo            map[string]config.DeviceInfo
+	deviceInfo            sync.Map
 	readCommandsExecuted  gometrics.Counter
 	serviceConfig         *config.ServiceConfig
 	socketServiceListener net.Listener
@@ -39,8 +37,6 @@ func (s *SocketDriver) Initialize(lc logger.LoggingClient, asyncCh chan<- *sdkMo
 	s.asyncCh = asyncCh
 	s.deviceCh = deviceCh
 	s.serviceConfig = &config.ServiceConfig{}
-
-	s.deviceInfo = make(map[string]config.DeviceInfo)
 
 	ds := interfaces.Service()
 
@@ -91,59 +87,54 @@ func (s *SocketDriver) Initialize(lc logger.LoggingClient, asyncCh chan<- *sdkMo
 // reqs: 命令的详细内容，可以通过该参数获取请求的数值类型等等
 // 返回值res: 将命令需要返回的值封装到res中，会自动包装成asyncCh发送到coredata中去
 func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[string]models.ProtocolProperties, reqs []sdkModels.CommandRequest) (res []*sdkModels.CommandValue, err error) {
-	// 使用读锁进行数据读取
-	s.mtx.RLock()
-	// 获取需要的设备信息
-	deviceInfo := s.deviceInfo[deviceName]
-	s.mtx.RUnlock()
-
 	res = make([]*sdkModels.CommandValue, len(reqs))
 
+	deviceInfoInterface, ok := s.deviceInfo.Load(deviceName)
+	if !ok {
+		s.lc.Errorf("failed to find device info for device:%s", deviceName)
+		return nil, fmt.Errorf("failed to find device info for device: %s", deviceName)
+	}
+	deviceInfo := deviceInfoInterface.(config.DeviceInfo)
+
+	// 在函数内创建result map用于存储结果
 	if reqs[0].DeviceResourceName == "FacialAndEEG" {
 		if deviceInfo.FacialeegConn.Conn == nil {
 			s.lc.Debugf("FacialAndEEG connection between device: %s and device-service has not been established yet", deviceName)
 			return nil, nil
 		}
-		s.result, err = s.DecodeJsonData(deviceInfo.FacialeegConn.Conn)
+		result, err := s.DecodeJsonData(deviceInfo.FacialeegConn.Conn)
 		if err != nil {
-			// 添加写锁
-			s.mtx.Lock()
-			defer s.mtx.Unlock()
-
-			s.lc.Errorf("failed decoding message from device:%s, close the connection between device-service and FacialAndEEG, ip : %s", deviceName, s.deviceInfo[deviceName].FacialeegConn.ClientIP)
-			if s.deviceInfo[deviceName].FacialeegConn.Conn != nil {
-				s.deviceInfo[deviceName].FacialeegConn.Conn.Close()
+			connInfo, _ := s.deviceInfo.Load(deviceName)
+			currentDeviceInfo := connInfo.(config.DeviceInfo)
+			s.lc.Errorf("failed decoding message from device:%s, close the connection between device-service and FacialAndEEG, ip : %s", deviceName, currentDeviceInfo.FacialeegConn.ClientIP)
+			if currentDeviceInfo.FacialeegConn.Conn != nil {
+				currentDeviceInfo.FacialeegConn.Conn.Close()
 			}
 
-			s.deviceInfo[deviceName] = config.DeviceInfo{
-				FacialeegConn: config.ConnectionInfo{
-					ClientIP: s.deviceInfo[deviceName].FacialeegConn.ClientIP,
-					Conn:     nil,
-				},
-				EyekmConn:       s.deviceInfo[deviceName].EyekmConn,
-				DeviceDataLabel: s.deviceInfo[deviceName].DeviceDataLabel,
-			}
+			// 修改连接信息并且重新保存到sync.Map中
+			currentDeviceInfo.FacialeegConn.Conn = nil
+			s.deviceInfo.Store(deviceName, currentDeviceInfo)
 
 			return nil, err
 		}
 
-		s.result["student_id"] = deviceInfo.DeviceDataLabel.StudentID
+		result["student_id"] = deviceInfo.DeviceDataLabel.StudentID
 		if deviceInfo.DeviceDataLabel.TaskID != "" {
-			s.result["task_id"] = deviceInfo.DeviceDataLabel.TaskID
+			result["task_id"] = deviceInfo.DeviceDataLabel.TaskID
 		}
-		s.result["facial_eeg_collect_timestamp"] = generateTimestamp()
+		result["facial_eeg_collect_timestamp"] = generateTimestamp()
 
-		stringValues, err := parseStringValue(s.result["seq"])
+		stringValues, err := parseStringValue(result["seq"])
 		if err != nil {
 			return nil, err
 		}
 		seqValue := stringValues[0]
 
 		s.lc.Infof(fmt.Sprintf("successfully received facial_eeg_data from device : %s, ip : %s, studend ID : %s, task ID : %s, seq : %s, facial_eeg_collect_timestamp : %s",
-			deviceName, deviceInfo.FacialeegConn.ClientIP, s.result["student_id"], deviceInfo.DeviceDataLabel.TaskID, seqValue, s.result["facial_eeg_collect_timestamp"]))
-		s.lc.Debugf(fmt.Sprintf("data content: %s", s.result))
+			deviceName, deviceInfo.FacialeegConn.ClientIP, result["student_id"], deviceInfo.DeviceDataLabel.TaskID, seqValue, result["facial_eeg_collect_timestamp"]))
+		s.lc.Debugf(fmt.Sprintf("data content: %s", result))
 
-		cv, err := sdkModels.NewCommandValue(reqs[0].DeviceResourceName, common.ValueTypeObject, s.result)
+		cv, err := sdkModels.NewCommandValue(reqs[0].DeviceResourceName, common.ValueTypeObject, result)
 		if err != nil {
 			s.lc.Errorf("failed NewCommandValue")
 		}
@@ -157,46 +148,39 @@ func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[strin
 			s.lc.Debugf("Eyekm connection between device: %s and device-service has not been established yet", deviceName)
 			return nil, nil
 		}
-		s.result, err = s.DecodeJsonData(deviceInfo.EyekmConn.Conn)
+		result, err := s.DecodeJsonData(deviceInfo.EyekmConn.Conn)
 		if err != nil {
-			// 添加写锁
-			s.mtx.Lock()
-			defer s.mtx.Unlock()
-
-			s.lc.Errorf("failed decoding message from device:%s, close the connection between device-service and EyekmConn, ip : %s", deviceName, s.deviceInfo[deviceName].EyekmConn.ClientIP)
-			if s.deviceInfo[deviceName].EyekmConn.Conn != nil {
-				s.deviceInfo[deviceName].EyekmConn.Conn.Close()
+			connInfo, _ := s.deviceInfo.Load(deviceName)
+			currentDeviceInfo := connInfo.(config.DeviceInfo)
+			s.lc.Errorf("failed decoding message from device:%s, close the connection between device-service and EyekmConn, ip : %s", deviceName, currentDeviceInfo.EyekmConn.ClientIP)
+			if currentDeviceInfo.EyekmConn.Conn != nil {
+				currentDeviceInfo.EyekmConn.Conn.Close()
 			}
 
-			s.deviceInfo[deviceName] = config.DeviceInfo{
-				FacialeegConn: s.deviceInfo[deviceName].FacialeegConn,
-				EyekmConn: config.ConnectionInfo{
-					ClientIP: s.deviceInfo[deviceName].EyekmConn.ClientIP,
-					Conn:     nil,
-				},
-				DeviceDataLabel: s.deviceInfo[deviceName].DeviceDataLabel,
-			}
+			// 修改连接信息并且重新保存到sync.Map中
+			currentDeviceInfo.EyekmConn.Conn = nil
+			s.deviceInfo.Store(deviceName, currentDeviceInfo)
 
 			return nil, err
 		}
 
-		s.result["student_id"] = deviceInfo.DeviceDataLabel.StudentID
+		result["student_id"] = deviceInfo.DeviceDataLabel.StudentID
 		if deviceInfo.DeviceDataLabel.TaskID != "" {
-			s.result["task_id"] = deviceInfo.DeviceDataLabel.TaskID
+			result["task_id"] = deviceInfo.DeviceDataLabel.TaskID
 		}
-		s.result["eye_km_collect_timestamp"] = generateTimestamp()
+		result["eye_km_collect_timestamp"] = generateTimestamp()
 
-		stringValues, err := parseStringValue(s.result["seq"])
+		stringValues, err := parseStringValue(result["seq"])
 		if err != nil {
 			return nil, err
 		}
 		seqValue := stringValues[0]
 
 		s.lc.Infof(fmt.Sprintf("successfully received eye_km_data from device : %s, ip : %s, studend ID : %s, task ID : %s, seq : %s, eye_km_collect_timestamp : %s",
-			deviceName, deviceInfo.EyekmConn.ClientIP, s.result["student_id"], deviceInfo.DeviceDataLabel.TaskID, seqValue, s.result["eye_km_collect_timestamp"]))
-		s.lc.Debugf(fmt.Sprintf("data content: %s", s.result))
+			deviceName, deviceInfo.EyekmConn.ClientIP, result["student_id"], deviceInfo.DeviceDataLabel.TaskID, seqValue, result["eye_km_collect_timestamp"]))
+		s.lc.Debugf(fmt.Sprintf("data content: %s", result))
 
-		cv, err := sdkModels.NewCommandValue(reqs[0].DeviceResourceName, common.ValueTypeObject, s.result)
+		cv, err := sdkModels.NewCommandValue(reqs[0].DeviceResourceName, common.ValueTypeObject, result)
 		if err != nil {
 			s.lc.Errorf("failed NewCommandValue")
 		}
@@ -225,24 +209,33 @@ func (s *SocketDriver) ListeningToClients(listener net.Listener) {
 }
 
 func (s *SocketDriver) ProcessConnectionRequest(conn net.Conn) {
-	ClientIP := conn.RemoteAddr().String()
+	clientIP := conn.RemoteAddr().String()
 	// 确认socket连接是否来自边缘设备
-	for k, v := range s.deviceInfo {
-		if v.FacialeegConn.ClientIP == ClientIP {
-			v.FacialeegConn.Conn = conn
-			s.deviceInfo[k] = v
-			s.lc.Infof("successfully bind FacialAndEEG connection request %s with device: %s", ClientIP, k)
-			return
-		} else if v.EyekmConn.ClientIP == ClientIP {
-			v.EyekmConn.Conn = conn
-			s.deviceInfo[k] = v
-			s.lc.Infof("successfully bind EyeAndKm connection request %s with device: %s", ClientIP, k)
-			return
-		}
-	}
+	var deviceFound bool
+	s.deviceInfo.Range(func(k, v interface{}) bool {
+		deviceName := k.(string)
+		deviceInfo := v.(config.DeviceInfo)
 
-	conn.Close()
-	s.lc.Infof("Failed to accept socket connection request %s, please confirm whether the deviceInfo has been successfully registered before connection", ClientIP)
+		if deviceInfo.FacialeegConn.ClientIP == clientIP {
+			deviceInfo.FacialeegConn.Conn = conn
+			s.deviceInfo.Store(deviceName, deviceInfo)
+			s.lc.Infof("successfully bind FacialAndEEG connection request %s with device: %s", clientIP, deviceName)
+			deviceFound = true
+			return false // 停止迭代
+		} else if deviceInfo.EyekmConn.ClientIP == clientIP {
+			deviceInfo.EyekmConn.Conn = conn
+			s.deviceInfo.Store(deviceName, deviceInfo)
+			s.lc.Infof("successfully bind EyeAndKm connection request %s with device: %s", clientIP, deviceName)
+			deviceFound = true
+			return false // 停止迭代
+		}
+		return true // 继续迭代
+	})
+
+	if !deviceFound {
+		conn.Close()
+		s.lc.Infof("Failed to accept socket connection request %s, please confirm whether the deviceInfo has been successfully registered before connection", clientIP)
+	}
 }
 
 func (s *SocketDriver) DecodeJsonData(conn net.Conn) (map[string]interface{}, error) {
@@ -294,75 +287,73 @@ func (s *SocketDriver) HandleWriteCommands(deviceName string, protocols map[stri
 }
 
 func (s *SocketDriver) AddDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
-	// 添加写锁
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+	facialEEGIP := protocols["socket"]["deviceIP"] + ":" + s.serviceConfig.SocketInfo.FacialAndEEGPort
+	eyeKmIP := protocols["socket"]["deviceIP"] + ":" + s.serviceConfig.SocketInfo.EyeAndKmPort
+	deviceDataLabel := config.EducationInfo{
+		StudentID: protocols["deviceDataLabel"]["student_id"],
+		TaskID:    protocols["deviceDataLabel"]["task_id"],
+	}
 
-	s.deviceInfo[deviceName] = config.DeviceInfo{
+	newDeviceInfo := config.DeviceInfo{
 		FacialeegConn: config.ConnectionInfo{
-			ClientIP: protocols["socket"]["deviceIP"] + ":" + s.serviceConfig.SocketInfo.FacialAndEEGPort,
+			ClientIP: facialEEGIP,
 			Conn:     nil,
 		},
 		EyekmConn: config.ConnectionInfo{
-			ClientIP: protocols["socket"]["deviceIP"] + ":" + s.serviceConfig.SocketInfo.EyeAndKmPort,
+			ClientIP: eyeKmIP,
 			Conn:     nil,
 		},
-		DeviceDataLabel: config.EducationInfo{
-			StudentID: protocols["deviceDataLabel"]["student_id"],
-			TaskID:    protocols["deviceDataLabel"]["task_id"],
-		},
+		DeviceDataLabel: deviceDataLabel,
 	}
-	s.lc.Infof("a new Device is added, deviceName: %s, FacialEEGIP : %s, EyeKmIP : %s", deviceName, s.deviceInfo[deviceName].FacialeegConn.ClientIP, s.deviceInfo[deviceName].EyekmConn.ClientIP)
+
+	s.deviceInfo.Store(deviceName, newDeviceInfo)
+	s.lc.Infof("a new Device is added, deviceName: %s, FacialEEGIP : %s, EyeKmIP : %s", deviceName, facialEEGIP, eyeKmIP)
 	return nil
 }
 
 func (s *SocketDriver) UpdateDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
-	// 添加写锁
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
 	clientIP := protocols["socket"]["deviceIP"]
-	deviceIP, _, err := net.SplitHostPort(s.deviceInfo[deviceName].FacialeegConn.ClientIP)
+	connInfo, ok := s.deviceInfo.Load(deviceName)
+	if !ok {
+		return fmt.Errorf("device %s not found", deviceName)
+	}
+	currentDeviceInfo := connInfo.(config.DeviceInfo)
+	deviceIP, _, err := net.SplitHostPort(currentDeviceInfo.FacialeegConn.ClientIP)
 	if err != nil {
 		return err
 	}
 
 	if clientIP != deviceIP {
 		// 检查IP信息是否有更新, 如果有更新则断开原先的连接, 并且设置新连接为空
-		s.deviceInfo[deviceName] = config.DeviceInfo{
-			FacialeegConn: config.ConnectionInfo{
-				ClientIP: clientIP + ":" + s.serviceConfig.SocketInfo.FacialAndEEGPort,
-				Conn:     nil,
-			},
-			EyekmConn: config.ConnectionInfo{
-				ClientIP: clientIP + ":" + s.serviceConfig.SocketInfo.EyeAndKmPort,
-				Conn:     nil,
-			},
-			DeviceDataLabel: config.EducationInfo{
-				StudentID: s.deviceInfo[deviceName].DeviceDataLabel.StudentID,
-				TaskID:    protocols["deviceDataLabel"]["task_id"],
-			},
+		if currentDeviceInfo.FacialeegConn.Conn != nil {
+			currentDeviceInfo.FacialeegConn.Conn.Close()
 		}
-		if s.deviceInfo[deviceName].FacialeegConn.Conn != nil {
-			s.deviceInfo[deviceName].FacialeegConn.Conn.Close()
+		if currentDeviceInfo.EyekmConn.Conn != nil {
+			currentDeviceInfo.EyekmConn.Conn.Close()
 		}
-		if s.deviceInfo[deviceName].EyekmConn.Conn != nil {
-			s.deviceInfo[deviceName].EyekmConn.Conn.Close()
+
+		// 更新IP地址并存储到sync.Map中
+		currentDeviceInfo.FacialeegConn = config.ConnectionInfo{
+			ClientIP: clientIP + ":" + s.serviceConfig.SocketInfo.FacialAndEEGPort,
+			Conn:     nil,
 		}
+		currentDeviceInfo.EyekmConn = config.ConnectionInfo{
+			ClientIP: clientIP + ":" + s.serviceConfig.SocketInfo.EyeAndKmPort,
+			Conn:     nil,
+		}
+		currentDeviceInfo.DeviceDataLabel.TaskID = protocols["deviceDataLabel"]["task_id"]
+
+		s.deviceInfo.Store(deviceName, currentDeviceInfo)
+
 		s.lc.Infof("DeviceIP changed, close the connection between device-service and %s, FacialEEGIP : %s, EyeKmIP : %s, student_id : %s, task_id : %s",
-			deviceName, s.deviceInfo[deviceName].FacialeegConn.ClientIP, s.deviceInfo[deviceName].EyekmConn.ClientIP,
-			s.deviceInfo[deviceName].DeviceDataLabel.StudentID, s.deviceInfo[deviceName].DeviceDataLabel.TaskID)
-	} else if s.deviceInfo[deviceName].DeviceDataLabel.TaskID != protocols["deviceDataLabel"]["task_id"] {
+			deviceName, currentDeviceInfo.FacialeegConn.ClientIP, currentDeviceInfo.EyekmConn.ClientIP,
+			currentDeviceInfo.DeviceDataLabel.StudentID, currentDeviceInfo.DeviceDataLabel.TaskID)
+	} else if currentDeviceInfo.DeviceDataLabel.TaskID != protocols["deviceDataLabel"]["task_id"] {
 		// 检查EducationInfo是否有更新, StudentID默认不会更改, 所以只需要检测TaskID部分
-		s.deviceInfo[deviceName] = config.DeviceInfo{
-			FacialeegConn: s.deviceInfo[deviceName].FacialeegConn,
-			EyekmConn:     s.deviceInfo[deviceName].EyekmConn,
-			DeviceDataLabel: config.EducationInfo{
-				StudentID: s.deviceInfo[deviceName].DeviceDataLabel.StudentID,
-				TaskID:    protocols["deviceDataLabel"]["task_id"],
-			},
-		}
-		s.lc.Infof("EducationInfo changed, student_id : %s, task_id : %s", s.deviceInfo[deviceName].DeviceDataLabel.StudentID, s.deviceInfo[deviceName].DeviceDataLabel.TaskID)
+		currentDeviceInfo.DeviceDataLabel.TaskID = protocols["deviceDataLabel"]["task_id"]
+		s.deviceInfo.Store(deviceName, currentDeviceInfo)
+
+		s.lc.Infof("EducationInfo changed, student_id : %s, task_id : %s", currentDeviceInfo.DeviceDataLabel.StudentID, currentDeviceInfo.DeviceDataLabel.TaskID)
 	} else {
 		s.lc.Infof("ClientIP and EducationInfo have not changed")
 	}
@@ -371,20 +362,26 @@ func (s *SocketDriver) UpdateDevice(deviceName string, protocols map[string]mode
 }
 
 func (s *SocketDriver) RemoveDevice(deviceName string, protocols map[string]models.ProtocolProperties) error {
-	// 添加写锁
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+	// 从sync.Map中获取设备信息
+	deviceInfoInterface, ok := s.deviceInfo.Load(deviceName)
+	if !ok {
+		s.lc.Infof("Device %s does not exist or has already been removed", deviceName)
+		return nil
+	}
+	deviceInfo := deviceInfoInterface.(config.DeviceInfo)
 
 	// 关闭设备关联的socket连接
-	s.lc.Infof("Device %s is removed, close the connection between device-service and %s", deviceName)
-	if s.deviceInfo[deviceName].FacialeegConn.Conn != nil {
-		s.deviceInfo[deviceName].FacialeegConn.Conn.Close()
+	s.lc.Infof("Device %s is removed, close the connection between device-service and %s", deviceName, deviceName)
+	if deviceInfo.FacialeegConn.Conn != nil {
+		deviceInfo.FacialeegConn.Conn.Close()
 	}
-	if s.deviceInfo[deviceName].EyekmConn.Conn != nil {
-		s.deviceInfo[deviceName].EyekmConn.Conn.Close()
+	if deviceInfo.EyekmConn.Conn != nil {
+		deviceInfo.EyekmConn.Conn.Close()
 	}
 
-	delete(s.deviceInfo, deviceName)
+	// 从sync.Map中删除设备信息
+	s.deviceInfo.Delete(deviceName)
+
 	return nil
 }
 
@@ -404,20 +401,27 @@ func (s *SocketDriver) ValidateDevice(device models.Device) error {
 }
 
 func (s *SocketDriver) Stop(force bool) error {
-	// 添加写锁
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
 	// 关闭所有socket连接
-	for _, v := range s.deviceInfo {
-		if v.FacialeegConn.Conn != nil {
-			v.FacialeegConn.Conn.Close()
+	s.deviceInfo.Range(func(_, value interface{}) bool {
+		deviceInfo := value.(config.DeviceInfo)
+		if deviceInfo.FacialeegConn.Conn != nil {
+			deviceInfo.FacialeegConn.Conn.Close()
 		}
-		if v.EyekmConn.Conn != nil {
-			v.EyekmConn.Conn.Close()
+		if deviceInfo.EyekmConn.Conn != nil {
+			deviceInfo.EyekmConn.Conn.Close()
+		}
+		return true // 继续迭代
+	})
+
+	// 关闭socket服务监听器
+	if s.socketServiceListener != nil {
+		err := s.socketServiceListener.Close()
+		if err != nil {
+			s.lc.Errorf("Failed to close socket service listener: %v", err)
+			return err
 		}
 	}
-	s.socketServiceListener.Close()
+
 	return nil
 }
 
