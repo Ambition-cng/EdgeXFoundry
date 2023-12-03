@@ -35,7 +35,7 @@ LogLevel = "INFO"
 
 [Service]
 HealthCheckInterval = "10s"
-Host = "192.168.31.70"
+Host = "127.0.0.1"
 # TODO: set this port appropriately,
 #       App service use port assigments 597xx with lower range 00-39 reserved for
 #       app-service-configurable profiles/instances, Rules Engine and examples
@@ -168,6 +168,11 @@ DeviceNames = "default-socket-device"
 [APPService]
 [APPService.RPCServerInfo]
   FacialAndEEGUrl = "127.0.0.1:50052"
+  EyeAndKmUrl = "0.0.0.0:0"
+  Timeout = 10
+  Protocol = "grpc"
+[APPService.EncryptionServerInfo]
+  FacialAndEEGUrl = "127.0.0.1:50051"
   EyeAndKmUrl = "0.0.0.0:0"
   Timeout = 10
   Protocol = "grpc"

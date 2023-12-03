@@ -51,8 +51,9 @@ type ServiceConfig struct {
 }
 
 type APPServiceConfig struct {
-	RPCServerInfo   RemoteServerInfo
-	CloudServerInfo RemoteServerInfo
+	RPCServerInfo        RemoteServerInfo
+	EncryptionServerInfo RemoteServerInfo
+	CloudServerInfo      RemoteServerInfo
 }
 
 type RemoteServerInfo struct {
@@ -81,6 +82,9 @@ func (c *ServiceConfig) UpdateFromRaw(rawConfig interface{}) bool {
 func (asc *APPServiceConfig) Validate() error {
 	if reflect.DeepEqual(asc.RPCServerInfo, RemoteServerInfo{}) {
 		return errors.New("RPCServerInfo is not set")
+	}
+	if reflect.DeepEqual(asc.EncryptionServerInfo, RemoteServerInfo{}) {
+		return errors.New("EncryptionInfo is not set")
 	}
 	if reflect.DeepEqual(asc.CloudServerInfo, RemoteServerInfo{}) {
 		return errors.New("CloudServerInfo is not set")

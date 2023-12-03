@@ -96,7 +96,7 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 		return -1
 	}
 
-	pipelinefunction := functions.Newpipelinefunction(app.serviceConfig.APPService.RPCServerInfo, app.serviceConfig.APPService.CloudServerInfo)
+	pipelinefunction := functions.Newpipelinefunction(app.serviceConfig.APPService.RPCServerInfo, app.serviceConfig.APPService.EncryptionServerInfo, app.serviceConfig.APPService.CloudServerInfo)
 
 	// TODO: Remove adding functions pipelines by topic if default pipeline above is all your Use Case needs.
 	//       Or remove default above if your use case needs multiple pipelines by topic.
@@ -149,6 +149,9 @@ func (app *myApp) ProcessConfigUpdates(rawWritableConfig interface{}) {
 
 	if !reflect.DeepEqual(previous.RPCServerInfo, updated.RPCServerInfo) {
 		app.lc.Infof("APPService.RPCServerInfo changed to: %v", updated.RPCServerInfo)
+	}
+	if !reflect.DeepEqual(previous.EncryptionServerInfo, updated.EncryptionServerInfo) {
+		app.lc.Infof("APPService.EncryptionServerInfo changed to: %v", updated.EncryptionServerInfo)
 	}
 	if !reflect.DeepEqual(previous.CloudServerInfo, updated.CloudServerInfo) {
 		app.lc.Infof("APPService.CloudServerInfo changed to: %v", updated.CloudServerInfo)

@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+option go_package = "github.com/edgexfoundry/app-cccccf/protobuf/encryption";
+
+package encryption;
+
+// 定义服务接口
+service GRpcService {
+    rpc encryptionProcess (EncryptionProcessRequest) returns (EncryptionProcessResponse) {}  //一个服务中可以定义多个接口，也就是多个函数功能
+}
+
+// 请求的参数
+message EncryptionProcessRequest {
+    string data = 1;
+};
+
+// 返回的对象
+message EncryptionProcessResponse {
+    string result = 1;
+};

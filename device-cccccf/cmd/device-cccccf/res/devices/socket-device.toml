@@ -5,9 +5,9 @@
   Labels = [ "socket" ]
   [DeviceList.Protocols]
   [DeviceList.Protocols.socket]
-    deviceIP = "0.0.0.0"
+    deviceIP = "127.0.0.1"
   [DeviceList.Protocols.deviceDataLabel]
-    student_id = "23031212216"
+    student_id = "S001"
     task_id = "0"
   [[DeviceList.AutoEvents]]
     Interval = "1s"

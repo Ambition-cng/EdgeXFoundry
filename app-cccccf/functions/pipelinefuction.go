@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -19,19 +20,22 @@ import (
 	"github.com/edgexfoundry/go-mod-core-contracts/v2/dtos"
 
 	"github.com/edgexfoundry/app-cccccf/config"
-	pb "github.com/edgexfoundry/app-cccccf/protobuf"
+	pb_encryption "github.com/edgexfoundry/app-cccccf/protobuf/encryption"
+	pb_model "github.com/edgexfoundry/app-cccccf/protobuf/model"
 )
 
-func Newpipelinefunction(rpcServer config.RemoteServerInfo, cloudServer config.RemoteServerInfo) *pipelinefunction {
+func Newpipelinefunction(rpcServer config.RemoteServerInfo, encryptionServer config.RemoteServerInfo, cloudServer config.RemoteServerInfo) *pipelinefunction {
 	return &pipelinefunction{
-		rpcServerInfo:   rpcServer,
-		cloudServerInfo: cloudServer,
+		rpcServerInfo:        rpcServer,
+		encryptionServerInfo: encryptionServer,
+		cloudServerInfo:      cloudServer,
 	}
 }
 
 type pipelinefunction struct {
-	rpcServerInfo   config.RemoteServerInfo
-	cloudServerInfo config.RemoteServerInfo
+	rpcServerInfo        config.RemoteServerInfo
+	encryptionServerInfo config.RemoteServerInfo
+	cloudServerInfo      config.RemoteServerInfo
 }
 
 func (pf *pipelinefunction) LogEventDetails(ctx interfaces.AppFunctionContext, data interface{}) (bool, interface{}) {
@@ -131,20 +135,58 @@ func (pf *pipelinefunction) ModelProcess(ctx interfaces.AppFunctionContext, data
 		}
 		seqValue, studentIDValue, facial_eeg_collect_timestamp, imageValue, eegValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3], stringValues[4]
 
-		// initialize rpc info and send
-		rpcAddr := pf.rpcServerInfo.FacialAndEEGUrl
-		facial_eeg_model_result, err := SendGRpcRequest(resourcename, rpcAddr, imageValue, eegValue, pf.rpcServerInfo.Timeout)
-		if err != nil {
-			return false, err
+		var wg sync.WaitGroup
+		modelResultChan := make(chan string, 1)
+		encryptionResultChan := make(chan string, 1)
+		errorChan := make(chan error, 2)
+
+		wg.Add(2)
+
+		// 异步调用 sendModelGRpcRequest
+		modelRpcAddr := pf.rpcServerInfo.FacialAndEEGUrl
+		go func() {
+			defer wg.Done()
+			result, err := sendModelGRpcRequest(resourcename, modelRpcAddr, imageValue, eegValue, pf.rpcServerInfo.Timeout)
+			if err != nil {
+				errorChan <- err
+				return
+			}
+			modelResultChan <- result
+		}()
+
+		// 异步调用 sendEncryptionGRpcRequest
+		encryptionRpcAddr := pf.encryptionServerInfo.FacialAndEEGUrl
+		go func() {
+			defer wg.Done()
+			result, err := sendEncryptionGRpcRequest("image", encryptionRpcAddr, imageValue, pf.encryptionServerInfo.Timeout)
+			if err != nil {
+				errorChan <- err
+				return
+			}
+			encryptionResultChan <- result
+		}()
+
+		// 等待两个goroutine完成
+		wg.Wait()
+		close(errorChan) // 关闭错误通道，表示不再发送任何错误
+
+		// 检查是否有错误返回
+		for err := range errorChan {
+			if err != nil {
+				return false, fmt.Errorf("error occurred during RPC calls: %v", err)
+			}
 		}
 
+		// 获取结果并进行下一步处理
+		facial_eeg_model_result := <-modelResultChan
+		encryptionResult := <-encryptionResultChan
 		lc.Infof("data seq : %s, studend ID : %s, facial_eeg_collect_timestamp : %s, got response from rpc server : %s", seqValue, studentIDValue, facial_eeg_collect_timestamp, facial_eeg_model_result)
 
 		studentFacialEEGFeature := config.StudentFacialEEGFeature{
 			StudentID:                 studentIDValue,
 			TaskID:                    pointerTaskID,
 			FacialEegCollectTimestamp: facial_eeg_collect_timestamp,
-			FacialExpression:          []byte(imageValue),
+			FacialExpression:          []byte(encryptionResult),
 			EegData:                   []byte(eegValue),
 			FacialEegModelResult:      strings.TrimRight(facial_eeg_model_result, "\n"),
 		}
@@ -164,7 +206,7 @@ func (pf *pipelinefunction) ModelProcess(ctx interfaces.AppFunctionContext, data
 
 		// initialize rpc info and send
 		rpcAddr := pf.rpcServerInfo.EyeAndKmUrl
-		eye_km_model_result, err := SendGRpcRequest(resourcename, rpcAddr, eyeValue, kmValue, pf.rpcServerInfo.Timeout)
+		eye_km_model_result, err := sendModelGRpcRequest(resourcename, rpcAddr, eyeValue, kmValue, pf.rpcServerInfo.Timeout)
 		if err != nil {
 			return false, err
 		}
@@ -245,36 +287,73 @@ func (pf *pipelinefunction) SendEventToCloud(ctx interfaces.AppFunctionContext, 
 	}
 }
 
-func SendGRpcRequest(resourcename string, serverAddress string, featureData string, eegdata string, timeOut int) (string, error) {
+// createGrpcConn 创建GRPC连接，并设置超时。
+func createGrpcConn(serverAddress string, timeOut int) (*grpc.ClientConn, context.Context, context.CancelFunc, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeOut)*time.Second)
-	defer cancel()
-
-	var result string
-	beginTime := time.Now() // 开始时间, 计算函数运行时间
-
-	// Set up a connection to the server.
 	conn, err := grpc.DialContext(ctx, serverAddress, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		return "", fmt.Errorf("cannot connect to RPC server: %v", err)
+		cancel()
+		return nil, nil, nil, fmt.Errorf("cannot connect to RPC server: %v", err)
 	}
+	return conn, ctx, cancel, nil
+}
+
+// sendModelGRpcRequest 发送用于处理模型的RPC请求。
+func sendModelGRpcRequest(resourceName string, serverAddress string, featureData string, eegData string, timeOut int) (string, error) {
+	conn, ctx, cancel, err := createGrpcConn(serverAddress, timeOut)
+	if err != nil {
+		return "", err
+	}
+	defer cancel()
 	defer conn.Close()
 
-	if resourcename == "FacialAndEEG" {
-		c := pb.NewGRpcServiceClient(conn)
+	var result string
+	beginTime := time.Now()
 
-		// Contact the server, get its response.
-		r, err := c.ModelProcess(ctx, &pb.ModelProcessRequest{ImageData: featureData, EegData: eegdata})
+	if resourceName == "FacialAndEEG" {
+		client := pb_model.NewGRpcServiceClient(conn)
+		req := &pb_model.ModelProcessRequest{
+			ImageData: featureData,
+			EegData:   eegData,
+		}
+		resp, err := client.ModelProcess(ctx, req)
 		if err != nil {
 			return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
 		}
-
-		result = r.GetResult()
-	} else { // EyeAndKm Part
-		result = ""
+		result = resp.GetResult()
 	}
 
-	endTime := time.Since(beginTime) // 从开始到当前所消耗的时间
-	fmt.Printf("Function SendGRpcRequest run time: %s\n", endTime.String())
+	endTime := time.Since(beginTime)
+	fmt.Printf("Function sendModelGRpcRequest run time: %s\n", endTime.String())
+
+	return result, nil
+}
+
+// sendEncryptionGRpcRequest 发送加密的RPC请求。
+func sendEncryptionGRpcRequest(resourceName string, serverAddress string, data string, timeOut int) (string, error) {
+	conn, ctx, cancel, err := createGrpcConn(serverAddress, timeOut)
+	if err != nil {
+		return "", err
+	}
+	defer cancel()
+	defer conn.Close()
+
+	var result string
+	beginTime := time.Now()
+
+	if resourceName == "image" {
+		client := pb_encryption.NewGRpcServiceClient(conn)
+		req := &pb_encryption.EncryptionProcessRequest{Data: data}
+		resp, err := client.EncryptionProcess(ctx, req)
+		if err != nil {
+			return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
+		}
+		result = resp.GetResult()
+	}
+
+	endTime := time.Since(beginTime)
+	fmt.Printf("Function sendEncryptionGRpcRequest run time: %s\n", endTime.String())
+
 	return result, nil
 }
 
