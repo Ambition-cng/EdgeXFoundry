@@ -321,6 +321,17 @@ func sendModelGRpcRequest(resourceName string, serverAddress string, featureData
 			return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
 		}
 		result = resp.GetResult()
+	} else if resourceName == "EyeAndKm" {
+		client := pb_model.NewGRpcServiceClient(conn)
+		req := &pb_model.ModelProcessRequest{
+			ImageData: featureData,
+			EegData:   eegData,
+		}
+		resp, err := client.ModelProcess(ctx, req)
+		if err != nil {
+			return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
+		}
+		result = resp.GetResult()
 	}
 
 	endTime := time.Since(beginTime)
