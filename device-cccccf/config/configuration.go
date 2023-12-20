@@ -16,7 +16,7 @@ type EducationInfo struct {
 
 type DeviceInfo struct {
 	FacialeegConn   ConnectionInfo
-	EyekmConn       ConnectionInfo
+	KeyboardMouse   ConnectionInfo
 	DeviceDataLabel EducationInfo
 }
 
@@ -27,13 +27,13 @@ type ServiceConfig struct {
 // SimpleCustomConfig is example of service's custom structured configuration that is specified in the service's
 // configuration.toml file and Configuration Provider (aka Consul), if enabled.
 type SocketInfo struct {
-	Host             string
-	SocketServerPort string
-	FacialAndEEGPort string
-	EyeAndKmPort     string
-	BufferSize       int64
-	SocketType       string
-	TimeOut          int
+	Host                 string
+	SocketServerPort     string
+	FacialAndEEGPort     string
+	KeyboardAndMousePort string
+	BufferSize           int64
+	SocketType           string
+	TimeOut              int
 }
 
 // UpdateFromRaw updates the service's full configuration from raw data received from

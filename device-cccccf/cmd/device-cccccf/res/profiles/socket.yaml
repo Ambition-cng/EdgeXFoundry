@@ -16,10 +16,10 @@ deviceResources:
       readWrite: "RW"
       mediaType: "EEG/Image"
   -
-    name: "EyeAndKm"
+    name: "KeyboardAndMouse"
     isHidden: true
-    description: "student EyeAndKm."
+    description: "student KeyboardAndMouse."
     properties:
       valueType: "String"
       readWrite: "RW"
-      mediaType: "Eye/Keyboard/Mouse"
+      mediaType: "Keyboard/Mouse"

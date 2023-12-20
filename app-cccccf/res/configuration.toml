@@ -35,7 +35,7 @@ LogLevel = "INFO"
 
 [Service]
 HealthCheckInterval = "10s"
-Host = "127.0.0.1"
+Host = "192.168.31.70"
 # TODO: set this port appropriately,
 #       App service use port assigments 597xx with lower range 00-39 reserved for
 #       app-service-configurable profiles/instances, Rules Engine and examples
@@ -166,18 +166,40 @@ DeviceNames = "default-socket-device"
 # This can be any structure you need, but it can not contain slices. Use a maps instead of slices.
 # For more details see: https://docs.edgexfoundry.org/2.2/microservices/application/GeneralAppServiceConfig/#custom-configuration
 [APPService]
-[APPService.RPCServerInfo]
-  FacialAndEEGUrl = "127.0.0.1:50052"
-  EyeAndKmUrl = "0.0.0.0:0"
-  Timeout = 10
-  Protocol = "grpc"
-[APPService.EncryptionServerInfo]
-  FacialAndEEGUrl = "127.0.0.1:50051"
-  EyeAndKmUrl = "0.0.0.0:0"
-  Timeout = 10
-  Protocol = "grpc"
-[APPService.CloudServerInfo]
-  FacialAndEEGUrl = "http://127.0.0.1:8080/facialeegfeatures/"
-  EyeAndKmUrl = "http://127.0.0.1:8080/eyekmfeatures/"
-  Timeout = 10
-  Protocol = "http"
+  [APPService.FunctionSwitch]
+    EncryptImageData = false
+    EncryptEEGData = false
+    ProcessFacialAndEEGData = true
+    ProcessEyeTrackingData = false
+    ProcessKeyboardAndMouseData = false
+    SaveDataToCloud = false
+  [APPService.ModelServer]
+    [APPService.ModelServer.FacialAndEEGModel]
+    Url = "127.0.0.1:50051"
+    Timeout = 10
+    Protocol = "grpc"
+    [APPService.ModelServer.EyeTrackingModel]
+    Url = "127.0.0.1:50052"
+    Timeout = 10
+    Protocol = "grpc"
+    [APPService.ModelServer.KeyBoardAndMouseModel]
+    Url = "0.0.0.0:0"
+    Timeout = 10
+    Protocol = "grpc"
+  [APPService.EncryptionServer]
+    [APPService.EncryptionServer.ImageEncryptionServer]
+    Url = "0.0.0.0:0"
+    Timeout = 10
+    Protocol = "grpc"
+    [APPService.EncryptionServer.EEGEncryptionServer]
+    Url = "0.0.0.0:0"
+    Timeout = 10
+    Protocol = "grpc"
+  [APPService.CloudServer]
+  FacialAndEEGFeaturePath = "facialeegfeatures"
+  EyeTrackingFeaturePath = "eyetrackingfeatures"
+  KeyBoardFeaturePath = "keyboardfeatures"
+    [APPService.CloudServer.DatabaseServer]
+    Url = "http://127.0.0.1:8080/"
+    Timeout = 10
+    Protocol = "http"

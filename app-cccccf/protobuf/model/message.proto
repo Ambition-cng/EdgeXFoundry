@@ -11,8 +11,8 @@ service GRpcService {
 
 // 请求的参数
 message ModelProcessRequest {
-    string imageData = 1;
-    string eegData = 2;
+    string featureData_1 = 1;
+    string featureData_2 = 2;
 };
 
 // 返回的对象

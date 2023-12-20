@@ -143,22 +143,22 @@ func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[strin
 		s.readCommandsExecuted.Inc(1)
 
 		return res, err
-	} else if reqs[0].DeviceResourceName == "EyeAndKm" {
-		if deviceInfo.EyekmConn.Conn == nil {
+	} else if reqs[0].DeviceResourceName == "KeyboardAndMouse" {
+		if deviceInfo.KeyboardMouse.Conn == nil {
 			s.lc.Debugf("Eyekm connection between device: %s and device-service has not been established yet", deviceName)
 			return nil, nil
 		}
-		result, err := s.DecodeJsonData(deviceInfo.EyekmConn.Conn)
+		result, err := s.DecodeJsonData(deviceInfo.KeyboardMouse.Conn)
 		if err != nil {
 			connInfo, _ := s.deviceInfo.Load(deviceName)
 			currentDeviceInfo := connInfo.(config.DeviceInfo)
-			s.lc.Errorf("failed decoding message from device:%s, close the connection between device-service and EyekmConn, ip : %s", deviceName, currentDeviceInfo.EyekmConn.ClientIP)
-			if currentDeviceInfo.EyekmConn.Conn != nil {
-				currentDeviceInfo.EyekmConn.Conn.Close()
+			s.lc.Errorf("failed decoding message from device:%s, close the connection between device-service and KeyboardMouse, ip : %s", deviceName, currentDeviceInfo.KeyboardMouse.ClientIP)
+			if currentDeviceInfo.KeyboardMouse.Conn != nil {
+				currentDeviceInfo.KeyboardMouse.Conn.Close()
 			}
 
 			// 修改连接信息并且重新保存到sync.Map中
-			currentDeviceInfo.EyekmConn.Conn = nil
+			currentDeviceInfo.KeyboardMouse.Conn = nil
 			s.deviceInfo.Store(deviceName, currentDeviceInfo)
 
 			return nil, err
@@ -168,7 +168,7 @@ func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[strin
 		if deviceInfo.DeviceDataLabel.TaskID != "" {
 			result["task_id"] = deviceInfo.DeviceDataLabel.TaskID
 		}
-		result["eye_km_collect_timestamp"] = generateTimestamp()
+		result["keyboard_mouse_collect_timestamp"] = generateTimestamp()
 
 		stringValues, err := parseStringValue(result["seq"])
 		if err != nil {
@@ -176,8 +176,8 @@ func (s *SocketDriver) HandleReadCommands(deviceName string, protocols map[strin
 		}
 		seqValue := stringValues[0]
 
-		s.lc.Infof(fmt.Sprintf("successfully received eye_km_data from device : %s, ip : %s, studend ID : %s, task ID : %s, seq : %s, eye_km_collect_timestamp : %s",
-			deviceName, deviceInfo.EyekmConn.ClientIP, result["student_id"], deviceInfo.DeviceDataLabel.TaskID, seqValue, result["eye_km_collect_timestamp"]))
+		s.lc.Infof(fmt.Sprintf("successfully received keyboard_mouse_data from device : %s, ip : %s, studend ID : %s, task ID : %s, seq : %s, keyboard_mouse_collect_timestamp : %s",
+			deviceName, deviceInfo.KeyboardMouse.ClientIP, result["student_id"], deviceInfo.DeviceDataLabel.TaskID, seqValue, result["keyboard_mouse_collect_timestamp"]))
 		s.lc.Debugf(fmt.Sprintf("data content: %s", result))
 
 		cv, err := sdkModels.NewCommandValue(reqs[0].DeviceResourceName, common.ValueTypeObject, result)
@@ -222,10 +222,10 @@ func (s *SocketDriver) ProcessConnectionRequest(conn net.Conn) {
 			s.lc.Infof("successfully bind FacialAndEEG connection request %s with device: %s", clientIP, deviceName)
 			deviceFound = true
 			return false // 停止迭代
-		} else if deviceInfo.EyekmConn.ClientIP == clientIP {
-			deviceInfo.EyekmConn.Conn = conn
+		} else if deviceInfo.KeyboardMouse.ClientIP == clientIP {
+			deviceInfo.KeyboardMouse.Conn = conn
 			s.deviceInfo.Store(deviceName, deviceInfo)
-			s.lc.Infof("successfully bind EyeAndKm connection request %s with device: %s", clientIP, deviceName)
+			s.lc.Infof("successfully bind KeyboardAndMouse connection request %s with device: %s", clientIP, deviceName)
 			deviceFound = true
 			return false // 停止迭代
 		}
@@ -288,7 +288,7 @@ func (s *SocketDriver) HandleWriteCommands(deviceName string, protocols map[stri
 
 func (s *SocketDriver) AddDevice(deviceName string, protocols map[string]models.ProtocolProperties, adminState models.AdminState) error {
 	facialEEGIP := protocols["socket"]["deviceIP"] + ":" + s.serviceConfig.SocketInfo.FacialAndEEGPort
-	eyeKmIP := protocols["socket"]["deviceIP"] + ":" + s.serviceConfig.SocketInfo.EyeAndKmPort
+	eyeKmIP := protocols["socket"]["deviceIP"] + ":" + s.serviceConfig.SocketInfo.KeyboardAndMousePort
 	deviceDataLabel := config.EducationInfo{
 		StudentID: protocols["deviceDataLabel"]["student_id"],
 		TaskID:    protocols["deviceDataLabel"]["task_id"],
@@ -299,7 +299,7 @@ func (s *SocketDriver) AddDevice(deviceName string, protocols map[string]models.
 			ClientIP: facialEEGIP,
 			Conn:     nil,
 		},
-		EyekmConn: config.ConnectionInfo{
+		KeyboardMouse: config.ConnectionInfo{
 			ClientIP: eyeKmIP,
 			Conn:     nil,
 		},
@@ -328,8 +328,8 @@ func (s *SocketDriver) UpdateDevice(deviceName string, protocols map[string]mode
 		if currentDeviceInfo.FacialeegConn.Conn != nil {
 			currentDeviceInfo.FacialeegConn.Conn.Close()
 		}
-		if currentDeviceInfo.EyekmConn.Conn != nil {
-			currentDeviceInfo.EyekmConn.Conn.Close()
+		if currentDeviceInfo.KeyboardMouse.Conn != nil {
+			currentDeviceInfo.KeyboardMouse.Conn.Close()
 		}
 
 		// 更新IP地址并存储到sync.Map中
@@ -337,8 +337,8 @@ func (s *SocketDriver) UpdateDevice(deviceName string, protocols map[string]mode
 			ClientIP: clientIP + ":" + s.serviceConfig.SocketInfo.FacialAndEEGPort,
 			Conn:     nil,
 		}
-		currentDeviceInfo.EyekmConn = config.ConnectionInfo{
-			ClientIP: clientIP + ":" + s.serviceConfig.SocketInfo.EyeAndKmPort,
+		currentDeviceInfo.KeyboardMouse = config.ConnectionInfo{
+			ClientIP: clientIP + ":" + s.serviceConfig.SocketInfo.KeyboardAndMousePort,
 			Conn:     nil,
 		}
 		currentDeviceInfo.DeviceDataLabel.TaskID = protocols["deviceDataLabel"]["task_id"]
@@ -346,7 +346,7 @@ func (s *SocketDriver) UpdateDevice(deviceName string, protocols map[string]mode
 		s.deviceInfo.Store(deviceName, currentDeviceInfo)
 
 		s.lc.Infof("DeviceIP changed, close the connection between device-service and %s, FacialEEGIP : %s, EyeKmIP : %s, student_id : %s, task_id : %s",
-			deviceName, currentDeviceInfo.FacialeegConn.ClientIP, currentDeviceInfo.EyekmConn.ClientIP,
+			deviceName, currentDeviceInfo.FacialeegConn.ClientIP, currentDeviceInfo.KeyboardMouse.ClientIP,
 			currentDeviceInfo.DeviceDataLabel.StudentID, currentDeviceInfo.DeviceDataLabel.TaskID)
 	} else if currentDeviceInfo.DeviceDataLabel.TaskID != protocols["deviceDataLabel"]["task_id"] {
 		// 检查EducationInfo是否有更新, StudentID默认不会更改, 所以只需要检测TaskID部分
@@ -375,8 +375,8 @@ func (s *SocketDriver) RemoveDevice(deviceName string, protocols map[string]mode
 	if deviceInfo.FacialeegConn.Conn != nil {
 		deviceInfo.FacialeegConn.Conn.Close()
 	}
-	if deviceInfo.EyekmConn.Conn != nil {
-		deviceInfo.EyekmConn.Conn.Close()
+	if deviceInfo.KeyboardMouse.Conn != nil {
+		deviceInfo.KeyboardMouse.Conn.Close()
 	}
 
 	// 从sync.Map中删除设备信息
@@ -407,8 +407,8 @@ func (s *SocketDriver) Stop(force bool) error {
 		if deviceInfo.FacialeegConn.Conn != nil {
 			deviceInfo.FacialeegConn.Conn.Close()
 		}
-		if deviceInfo.EyekmConn.Conn != nil {
-			deviceInfo.EyekmConn.Conn.Close()
+		if deviceInfo.KeyboardMouse.Conn != nil {
+			deviceInfo.KeyboardMouse.Conn.Close()
 		}
 		return true // 继续迭代
 	})

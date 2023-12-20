@@ -19,7 +19,6 @@ package main
 
 import (
 	"os"
-	"reflect"
 
 	"github.com/edgexfoundry/app-cccccf/config"
 	"github.com/edgexfoundry/app-cccccf/functions"
@@ -96,7 +95,7 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 		return -1
 	}
 
-	pipelinefunction := functions.Newpipelinefunction(app.serviceConfig.APPService.RPCServerInfo, app.serviceConfig.APPService.EncryptionServerInfo, app.serviceConfig.APPService.CloudServerInfo)
+	pipelinefunction := functions.Newpipelinefunction(app.serviceConfig.APPService)
 
 	// TODO: Remove adding functions pipelines by topic if default pipeline above is all your Use Case needs.
 	//       Or remove default above if your use case needs multiple pipelines by topic.
@@ -109,10 +108,9 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 	// Note: This example with default above causes Events from Int32 source to be processed twice
 	//       resulting in the XML to be published back to the MessageBus twice.
 	// See https://docs.edgexfoundry.org/2.2/microservices/application/AdvancedTopics/#pipeline-per-topics for more details.
-	err = app.service.AddFunctionsPipelineForTopics("Features", []string{"edgex/events/#/#/#/FacialAndEEG", "edgex/events/#/#/#/EyeAndKm"},
+	err = app.service.AddFunctionsPipelineForTopics("Features", []string{"edgex/events/#/#/#/FacialAndEEG", "edgex/events/#/#/#/KeyBoardAndMouse"},
 		pipelinefunction.LogEventDetails,
-		pipelinefunction.ModelProcess,
-		pipelinefunction.SendEventToCloud)
+		pipelinefunction.ProcessAndSaveData)
 	if err != nil {
 		app.lc.Errorf("AddFunctionsPipelineForTopic returned error: %s", err.Error())
 		return -1
@@ -133,27 +131,4 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 // do any special processing for changes that require more.
 // TODO: Update using your Custom configuration 'writeable' type or remove if not using ListenForCustomConfigChanges
 func (app *myApp) ProcessConfigUpdates(rawWritableConfig interface{}) {
-	updated, ok := rawWritableConfig.(*config.APPServiceConfig)
-	if !ok {
-		app.lc.Error("unable to process config updates: Can not cast raw config to type 'APPServiceConfig'")
-		return
-	}
-
-	previous := app.serviceConfig.APPService
-	app.serviceConfig.APPService = *updated
-
-	if reflect.DeepEqual(previous, updated) {
-		app.lc.Info("No changes detected")
-		return
-	}
-
-	if !reflect.DeepEqual(previous.RPCServerInfo, updated.RPCServerInfo) {
-		app.lc.Infof("APPService.RPCServerInfo changed to: %v", updated.RPCServerInfo)
-	}
-	if !reflect.DeepEqual(previous.EncryptionServerInfo, updated.EncryptionServerInfo) {
-		app.lc.Infof("APPService.EncryptionServerInfo changed to: %v", updated.EncryptionServerInfo)
-	}
-	if !reflect.DeepEqual(previous.CloudServerInfo, updated.CloudServerInfo) {
-		app.lc.Infof("APPService.CloudServerInfo changed to: %v", updated.CloudServerInfo)
-	}
 }

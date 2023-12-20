@@ -22,21 +22,6 @@ package config
 // For more details see https://docs.edgexfoundry.org/2.2/microservices/application/GeneralAppServiceConfig/#custom-configuration
 // TODO: Update this configuration as needed for you service's needs and remove this comment
 //       or remove this file if not using custom configuration.
-
-import (
-	"errors"
-	"reflect"
-)
-
-type StudentEyeKmFeature struct {
-	StudentID             string `json:"student_id"`
-	TaskID                *int   `json:"task_id,omitempty"`
-	EyeKmCollectTimestamp string `json:"eye_km_collect_timestamp"`
-	EyeTrackingData       []byte `json:"eye_tracking_data"`
-	KeyboadrMouseData     []byte `json:"keyboadr_mouse_data"`
-	EyeKmModelResult      string `json:"eye_km_model_result"`
-}
-
 type StudentFacialEEGFeature struct {
 	StudentID                 string `json:"student_id"`
 	TaskID                    *int   `json:"task_id,omitempty"`
@@ -46,21 +31,64 @@ type StudentFacialEEGFeature struct {
 	FacialEegModelResult      string `json:"facial_eeg_model_result"`
 }
 
+type StudentEyeTrackingFeature struct {
+	StudentID                   string `json:"student_id"`
+	TaskID                      *int   `json:"task_id,omitempty"`
+	EyeTrackingCollectTimeStamp string `json:"eye_tracking_collect_timestamp"`
+	EyeTrackingData             []byte `json:"eye_tracking_data"`
+	EyeTrackingModelResult      string `json:"eye_tracking_model_result"`
+}
+
+type StudentKeyboardMouseFeature struct {
+	StudentID                     string `json:"student_id"`
+	TaskID                        *int   `json:"task_id,omitempty"`
+	KeyboardMouseCollectTimestamp string `json:"keyboard_mouse_collect_timestamp"`
+	KeyboardMouseData             []byte `json:"keyboard_mouse_data"`
+	KeyboardMouseModelResult      string `json:"keyboard_mouse_model_result"`
+}
+
 type ServiceConfig struct {
 	APPService APPServiceConfig
 }
 
 type APPServiceConfig struct {
-	RPCServerInfo        RemoteServerInfo
-	EncryptionServerInfo RemoteServerInfo
-	CloudServerInfo      RemoteServerInfo
+	FunctionSwitch   FunctionSwitchInfo
+	ModelServer      ModelServerInfo
+	EncryptionServer EncryptionServerInfo
+	CloudServer      CloudServerInfo
 }
 
-type RemoteServerInfo struct {
-	FacialAndEEGUrl string
-	EyeAndKmUrl     string
-	Timeout         int
-	Protocol        string
+type FunctionSwitchInfo struct {
+	EncryptImageData            bool
+	EncryptEEGData              bool
+	ProcessFacialAndEEGData     bool
+	ProcessEyeTrackingData      bool
+	ProcessKeyboardAndMouseData bool
+	SaveDataToCloud             bool
+}
+
+type ModelServerInfo struct {
+	FacialAndEEGModel     ServerInfo
+	EyeTrackingModel      ServerInfo
+	KeyBoardAndMouseModel ServerInfo
+}
+
+type EncryptionServerInfo struct {
+	ImageEncryptionServer ServerInfo
+	EEGEncryptionServer   ServerInfo
+}
+
+type CloudServerInfo struct {
+	FacialAndEEGFeaturePath string
+	EyeTrackingFeaturePath  string
+	KeyBoardFeaturePath     string
+	DatabaseServer          ServerInfo
+}
+
+type ServerInfo struct {
+	Url      string
+	Timeout  int
+	Protocol string
 }
 
 // TODO: Update using your Custom configuration type.
@@ -80,15 +108,5 @@ func (c *ServiceConfig) UpdateFromRaw(rawConfig interface{}) bool {
 // Validate ensures your custom configuration has proper values.
 // TODO: Update to properly validate your custom configuration
 func (asc *APPServiceConfig) Validate() error {
-	if reflect.DeepEqual(asc.RPCServerInfo, RemoteServerInfo{}) {
-		return errors.New("RPCServerInfo is not set")
-	}
-	if reflect.DeepEqual(asc.EncryptionServerInfo, RemoteServerInfo{}) {
-		return errors.New("EncryptionInfo is not set")
-	}
-	if reflect.DeepEqual(asc.CloudServerInfo, RemoteServerInfo{}) {
-		return errors.New("CloudServerInfo is not set")
-	}
-
 	return nil
 }

@@ -16,4 +16,4 @@
   [[DeviceList.AutoEvents]]
     Interval = "1s"
     OnChange = false
-    SourceName = "EyeAndKm"
+    SourceName = "KeyboardAndMouse"
