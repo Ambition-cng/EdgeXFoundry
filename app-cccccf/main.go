@@ -108,7 +108,7 @@ func (app *myApp) CreateAndRunAppService(serviceKey string, newServiceFactory fu
 	// Note: This example with default above causes Events from Int32 source to be processed twice
 	//       resulting in the XML to be published back to the MessageBus twice.
 	// See https://docs.edgexfoundry.org/2.2/microservices/application/AdvancedTopics/#pipeline-per-topics for more details.
-	err = app.service.AddFunctionsPipelineForTopics("Features", []string{"edgex/events/#/#/#/FacialAndEEG", "edgex/events/#/#/#/KeyBoardAndMouse"},
+	err = app.service.AddFunctionsPipelineForTopics("Features", []string{"edgex/events/#/#/#/FacialAndEEG", "edgex/events/#/#/#/KeyboardAndMouse"},
 		pipelinefunction.LogEventDetails,
 		pipelinefunction.ProcessAndSaveData)
 	if err != nil {
