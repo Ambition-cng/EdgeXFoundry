@@ -195,29 +195,33 @@ func (pf *pipelinefunction) ProcessAndSaveData(ctx interfaces.AppFunctionContext
 		}
 
 		if pf.appServiceConfig.FunctionSwitch.SaveDataToCloud {
-			// 存储面部表情、脑电数据及模型处理结果
-			studentFacialEEGFeature := config.StudentFacialEEGFeature{
-				StudentID:                 studentIDValue,
-				TaskID:                    pointerTaskID,
-				FacialEegCollectTimestamp: facial_eeg_collect_timestamp,
-				FacialExpression:          []byte(imageValue),
-				EegData:                   []byte(eegValue),
-				FacialEegModelResult:      strings.TrimRight(facial_eeg_model_result, "\n"),
-			}
-			if err := sendDataToCloud(pf.appServiceConfig.CloudServer, studentFacialEEGFeature); err != nil {
-				return false, fmt.Errorf("error occurred during sending http request to cloud : %v", err)
+			if pf.appServiceConfig.FunctionSwitch.ProcessFacialAndEEGData {
+				// 存储面部表情、脑电数据及模型处理结果
+				studentFacialEEGFeature := config.StudentFacialEEGFeature{
+					StudentID:                 studentIDValue,
+					TaskID:                    pointerTaskID,
+					FacialEegCollectTimestamp: facial_eeg_collect_timestamp,
+					FacialExpression:          []byte(imageValue),
+					EegData:                   []byte(eegValue),
+					FacialEegModelResult:      strings.TrimRight(facial_eeg_model_result, "\n"),
+				}
+				if err := sendDataToCloud(pf.appServiceConfig.CloudServer, studentFacialEEGFeature); err != nil {
+					return false, fmt.Errorf("error occurred during sending http request to cloud : %v", err)
+				}
 			}
 
-			// 存储眼球追踪数据以及模型处理结果
-			studentEyeTrackingFeature := config.StudentEyeTrackingFeature{
-				StudentID:                   studentIDValue,
-				TaskID:                      pointerTaskID,
-				EyeTrackingCollectTimeStamp: eye_tracking_collect_timestamp,
-				EyeTrackingData:             []byte(imageValue),
-				EyeTrackingModelResult:      strings.TrimRight(eye_tracking_mode_result, "\n"),
-			}
-			if err := sendDataToCloud(pf.appServiceConfig.CloudServer, studentEyeTrackingFeature); err != nil {
-				return false, fmt.Errorf("error occurred during sending http request to cloud : %v", err)
+			if pf.appServiceConfig.FunctionSwitch.ProcessEyeTrackingData {
+				// 存储眼球追踪数据以及模型处理结果
+				studentEyeTrackingFeature := config.StudentEyeTrackingFeature{
+					StudentID:                   studentIDValue,
+					TaskID:                      pointerTaskID,
+					EyeTrackingCollectTimeStamp: eye_tracking_collect_timestamp,
+					EyeTrackingData:             []byte(imageValue),
+					EyeTrackingModelResult:      strings.TrimRight(eye_tracking_mode_result, "\n"),
+				}
+				if err := sendDataToCloud(pf.appServiceConfig.CloudServer, studentEyeTrackingFeature); err != nil {
+					return false, fmt.Errorf("error occurred during sending http request to cloud : %v", err)
+				}
 			}
 		}
 
@@ -281,24 +285,27 @@ func sendDataToCloud(cloudServerInfo config.CloudServerInfo, data interface{}) e
 	}
 
 	var err error
-	var url string
+	var url, resourceName string
 	var jsonData []byte
 	// 将数据转换为 json
 	switch t := data.(type) {
 	case config.StudentFacialEEGFeature:
 		url = cloudServerInfo.DatabaseServer.Url + cloudServerInfo.FacialAndEEGFeaturePath
+		resourceName = "FacialAndEEG"
 		jsonData, err = json.Marshal(data.(config.StudentFacialEEGFeature))
 		if err != nil {
 			return fmt.Errorf("error occurred while encoding StudentFacialEEGFeature data: %v", err)
 		}
 	case config.StudentEyeTrackingFeature:
 		url = cloudServerInfo.DatabaseServer.Url + cloudServerInfo.EyeTrackingFeaturePath
+		resourceName = "EyeTracking"
 		jsonData, err = json.Marshal(data.(config.StudentEyeTrackingFeature))
 		if err != nil {
 			return fmt.Errorf("error occurred while encoding StudentEyeTrackingFeature data: %v", err)
 		}
 	case config.StudentKeyboardMouseFeature:
 		url = cloudServerInfo.DatabaseServer.Url + cloudServerInfo.KeyBoardFeaturePath
+		resourceName = "KeyboardMouse"
 		jsonData, err = json.Marshal(data.(config.StudentKeyboardMouseFeature))
 		if err != nil {
 			return fmt.Errorf("error occurred while encoding StudentKeyboardMouseFeature data: %v", err)
@@ -333,10 +340,10 @@ func sendDataToCloud(cloudServerInfo config.CloudServerInfo, data interface{}) e
 
 	// 检查响应状态码
 	if resp.StatusCode == http.StatusOK {
-		fmt.Printf("Successfully post facial and eeg feature, http response's StatusCode : %d\n", resp.StatusCode)
+		fmt.Printf("Successfully post %s feature, http response's StatusCode : %d\n", resourceName, resp.StatusCode)
 		return nil
 	} else {
-		return fmt.Errorf("failed to post facial and eeg feature, http response's StatusCode : %d", resp.StatusCode)
+		return fmt.Errorf("failed to post %s feature, http response's StatusCode : %d", resourceName, resp.StatusCode)
 	}
 }
 
