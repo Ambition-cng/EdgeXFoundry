@@ -27,7 +27,9 @@ type StudentFacialEEGFeature struct {
 	TaskID                    *int   `json:"task_id,omitempty"`
 	FacialEegCollectTimestamp string `json:"facial_eeg_collect_timestamp"`
 	FacialExpression          []byte `json:"facial_expression"`
+	FacialExpressionKey       []byte `json:"facial_expression_key"`
 	EegData                   []byte `json:"eeg_data"`
+	EegDataKey                []byte `json:"eeg_data_key"`
 	FacialEegModelResult      string `json:"facial_eeg_model_result"`
 }
 
@@ -36,6 +38,7 @@ type StudentEyeTrackingFeature struct {
 	TaskID                      *int   `json:"task_id,omitempty"`
 	EyeTrackingCollectTimeStamp string `json:"eye_tracking_collect_timestamp"`
 	EyeTrackingData             []byte `json:"eye_tracking_data"`
+	EyeTrackingDataKey          []byte `json:"eye_tracking_data_key"`
 	EyeTrackingModelResult      string `json:"eye_tracking_model_result"`
 }
 

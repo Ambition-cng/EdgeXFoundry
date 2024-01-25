@@ -132,6 +132,7 @@ func (pf *pipelinefunction) ProcessAndSaveData(ctx interfaces.AppFunctionContext
 		seqValue, studentIDValue, facial_eeg_collect_timestamp, imageValue, eegValue := stringValues[0], stringValues[1], stringValues[2], stringValues[3], stringValues[4]
 		eye_tracking_collect_timestamp := facial_eeg_collect_timestamp
 
+		var imageKey, eegKey string
 		var facial_eeg_model_result, eye_tracking_mode_result string
 		functionSwitch := pf.appServiceConfig.FunctionSwitch
 		if functionSwitch.ProcessFacialAndEEGData || functionSwitch.ProcessEyeTrackingData || functionSwitch.EncryptImageData || functionSwitch.EncryptEEGData {
@@ -139,7 +140,9 @@ func (pf *pipelinefunction) ProcessAndSaveData(ctx interfaces.AppFunctionContext
 			FacialAndEEGResultChan := make(chan string, 1)
 			EyeTrackingResultChan := make(chan string, 1)
 			imageEncryptionResultChan := make(chan string, 1)
+			imageEncryptionKeyChan := make(chan string, 1)
 			eegEncryptionResultChan := make(chan string, 1)
+			eegEncryptionKeyChan := make(chan string, 1)
 			errorChan := make(chan error, 4)
 
 			// 异步调用sendModelGRpcRequest处理面部表情和脑电数据
@@ -157,13 +160,13 @@ func (pf *pipelinefunction) ProcessAndSaveData(ctx interfaces.AppFunctionContext
 			// 异步调用sendEncryptionGRpcRequest加密图像数据
 			if functionSwitch.EncryptImageData {
 				wg.Add(1)
-				go performEncryptionRequest(&wg, pf.appServiceConfig.EncryptionServer.ImageEncryptionServer.Url, imageValue, pf.appServiceConfig.EncryptionServer.ImageEncryptionServer.Timeout, imageEncryptionResultChan, errorChan)
+				go performEncryptionRequest(&wg, pf.appServiceConfig.EncryptionServer.ImageEncryptionServer.Url, imageValue, pf.appServiceConfig.EncryptionServer.ImageEncryptionServer.Timeout, imageEncryptionResultChan, imageEncryptionKeyChan, errorChan)
 			}
 
 			// 异步调用sendEncryptionGRpcRequest加密脑电数据
 			if functionSwitch.EncryptEEGData {
 				wg.Add(1)
-				go performEncryptionRequest(&wg, pf.appServiceConfig.EncryptionServer.EEGEncryptionServer.Url, eegValue, pf.appServiceConfig.EncryptionServer.EEGEncryptionServer.Timeout, eegEncryptionResultChan, errorChan)
+				go performEncryptionRequest(&wg, pf.appServiceConfig.EncryptionServer.EEGEncryptionServer.Url, eegValue, pf.appServiceConfig.EncryptionServer.EEGEncryptionServer.Timeout, eegEncryptionResultChan, eegEncryptionKeyChan, errorChan)
 			}
 
 			// 等待四个goroutine完成
@@ -180,9 +183,11 @@ func (pf *pipelinefunction) ProcessAndSaveData(ctx interfaces.AppFunctionContext
 			// 获取结果并进行下一步处理
 			if functionSwitch.EncryptImageData {
 				imageValue = <-imageEncryptionResultChan
+				imageKey = <-imageEncryptionKeyChan
 			}
 			if functionSwitch.EncryptEEGData {
 				eegValue = <-eegEncryptionResultChan
+				eegKey = <-eegEncryptionKeyChan
 			}
 			if functionSwitch.ProcessFacialAndEEGData {
 				facial_eeg_model_result = <-FacialAndEEGResultChan
@@ -202,7 +207,9 @@ func (pf *pipelinefunction) ProcessAndSaveData(ctx interfaces.AppFunctionContext
 					TaskID:                    pointerTaskID,
 					FacialEegCollectTimestamp: facial_eeg_collect_timestamp,
 					FacialExpression:          []byte(imageValue),
+					FacialExpressionKey:       []byte(imageKey),
 					EegData:                   []byte(eegValue),
+					EegDataKey:                []byte(eegKey),
 					FacialEegModelResult:      strings.TrimRight(facial_eeg_model_result, "\n"),
 				}
 				if err := sendDataToCloud(pf.appServiceConfig.CloudServer, studentFacialEEGFeature); err != nil {
@@ -217,6 +224,7 @@ func (pf *pipelinefunction) ProcessAndSaveData(ctx interfaces.AppFunctionContext
 					TaskID:                      pointerTaskID,
 					EyeTrackingCollectTimeStamp: eye_tracking_collect_timestamp,
 					EyeTrackingData:             []byte(imageValue),
+					EyeTrackingDataKey:          []byte(imageKey),
 					EyeTrackingModelResult:      strings.TrimRight(eye_tracking_mode_result, "\n"),
 				}
 				if err := sendDataToCloud(pf.appServiceConfig.CloudServer, studentEyeTrackingFeature); err != nil {
@@ -359,14 +367,15 @@ func performModelRequest(wg *sync.WaitGroup, rpcAddress string, imageValue strin
 }
 
 // 封装加密请求的逻辑
-func performEncryptionRequest(wg *sync.WaitGroup, rpcAddress string, dataValue string, timeout int, resultChan chan<- string, errorChan chan<- error) {
+func performEncryptionRequest(wg *sync.WaitGroup, rpcAddress string, dataValue string, timeout int, resultChan chan<- string, keyChan chan<- string, errorChan chan<- error) {
 	defer wg.Done()
-	result, err := sendEncryptionGRpcRequest(rpcAddress, dataValue, timeout)
+	result, key, err := sendEncryptionGRpcRequest(rpcAddress, dataValue, timeout)
 	if err != nil {
 		errorChan <- err
 		return
 	}
 	resultChan <- result
+	keyChan <- key
 }
 
 // createGrpcConn 创建GRPC连接，并设置超时。
@@ -410,29 +419,29 @@ func sendModelGRpcRequest(serverAddress string, featureData_1 string, featureDat
 }
 
 // sendEncryptionGRpcRequest 发送加密的RPC请求。
-func sendEncryptionGRpcRequest(serverAddress string, data string, timeOut int) (string, error) {
+func sendEncryptionGRpcRequest(serverAddress string, data string, timeOut int) (string, string, error) {
 	conn, ctx, cancel, err := createGrpcConn(serverAddress, timeOut)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer cancel()
 	defer conn.Close()
 
-	var result string
+	var result, key string
 	beginTime := time.Now()
 
 	client := pb_encryption.NewGRpcServiceClient(conn)
 	req := &pb_encryption.EncryptionProcessRequest{Data: data}
 	resp, err := client.EncryptionProcess(ctx, req)
 	if err != nil {
-		return "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
+		return "", "", fmt.Errorf("fail to get response from rpc server, fail reason: %v", err)
 	}
-	result = resp.GetResult()
+	result, key = resp.GetResult(), resp.GetKey()
 
 	endTime := time.Since(beginTime)
 	fmt.Printf("Function sendEncryptionGRpcRequest run time: %s\n", endTime.String())
 
-	return result, nil
+	return result, key, nil
 }
 
 func parseStringValue(values ...interface{}) ([]string, error) {

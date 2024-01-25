@@ -17,4 +17,5 @@ message EncryptionProcessRequest {
 // 返回的对象
 message EncryptionProcessResponse {
     string result = 1;
+    string key = 2;
 };
